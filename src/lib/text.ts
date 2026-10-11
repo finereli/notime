@@ -23,3 +23,5 @@ export function weightedLength(input: string): number {
 }
 
 export const LIMIT = 280
+// What X allows a Premium account in one post.
+export const LONG_LIMIT = 25000

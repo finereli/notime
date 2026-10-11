@@ -15,11 +15,15 @@
   import Notifications from './views/Notifications.svelte'
   import Detail from './views/Detail.svelte'
   import Drafts from './views/Drafts.svelte'
+  import Posts from './views/Posts.svelte'
+  import Post from './views/Post.svelte'
   import Settings from './views/Settings.svelte'
   import { apiJson } from './lib/api'
   import { auth, type User } from './lib/auth.svelte'
   import { drafts } from './lib/drafts.svelte'
   import { notifications } from './lib/notifications.svelte'
+  import { posts } from './lib/posts.svelte'
+  import { prefs } from './lib/prefs.svelte'
   import { router } from './lib/router.svelte'
   import { toasts } from '$shared/lib/toast.svelte'
 
@@ -34,10 +38,12 @@
 
   const view = $derived(router.route.view)
   const detailId = $derived(router.route.view === 'detail' ? router.route.id : '')
-  const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', drafts: 'Drafts', settings: 'Settings' }[view])
+  const postRoute = $derived(router.route.view === 'post' ? router.route : null)
+  const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', drafts: 'Drafts', posts: 'Your posts', post: 'Your post', settings: 'Settings' }[view])
   const entries = $derived([
     { label: 'Write', hash: '/', current: view === 'write' },
     { label: 'Notifications', hash: '/notifications', current: view === 'notifications' || view === 'detail', count: notifications.unread || undefined },
+    { label: 'Your posts', hash: '/posts', current: view === 'posts' || view === 'post' },
     { label: 'Drafts', hash: '/drafts', current: view === 'drafts', count: drafts.parked.length || undefined },
     { label: 'Settings', hash: '/settings', current: view === 'settings' },
   ])
@@ -47,9 +53,10 @@
   async function refresh() {
     if (!auth.signedIn) return
     try {
-      const me = await apiJson<{ user: User; unread: number; pushAll: boolean }>('/api/me')
+      const me = await apiJson<{ user: User; unread: number; pushAll: boolean; longPosts: boolean; longPostsFrom: 'you' | 'x' | 'unknown' }>('/api/me')
       auth.setUser(me.user)
       pushAll = me.pushAll
+      prefs.set(me.longPosts, me.longPostsFrom)
       notifications.setUnread(me.unread)
     } catch {}
     notifications.load()
@@ -75,6 +82,14 @@
     })
   }
 
+  async function refreshPosts() {
+    try {
+      if (!(await posts.refresh())) toasts.error('Nothing new', 2000)
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : 'Could not check X')
+    }
+  }
+
   function toggleDark() {
     dark = !dark
     setDarkMode(dark)
@@ -98,6 +113,14 @@
   <div class="shell">
     {#if view === 'detail'}
       <TopBar leading="back" {title} onleading={() => router.back('/notifications')} />
+    {:else if view === 'post'}
+      <TopBar leading="back" {title} onleading={() => router.back('/posts')} />
+    {:else if view === 'posts'}
+      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for posts made elsewhere" ontrailing={refreshPosts}>
+        {#snippet trailing()}
+          <span class:turning={posts.syncing}><Icon name="refresh" /></span>
+        {/snippet}
+      </TopBar>
     {:else if view === 'write'}
       <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Notifications" ontrailing={() => router.go('/notifications')}>
         {#snippet trailing()}
@@ -125,6 +148,10 @@
         {#key detailId}<Detail id={detailId} />{/key}
       {:else if view === 'drafts'}
         <Drafts />
+      {:else if view === 'posts'}
+        <Posts />
+      {:else if postRoute}
+        {#key postRoute.id + postRoute.quote}<Post id={postRoute.id} quote={postRoute.quote} />{/key}
       {:else if view === 'settings'}
         <Settings bind:pushAll />
       {:else}

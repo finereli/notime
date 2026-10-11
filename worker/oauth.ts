@@ -6,7 +6,7 @@ import { problemDetail } from './x'
 // client. offline.access is what gets us a refresh token, which the webhook
 // and push need long after the browser tab is gone.
 
-export const SCOPES = 'tweet.read tweet.write users.read media.write offline.access like.read follows.read'
+export const SCOPES = 'tweet.read tweet.write users.read media.write offline.access follows.read'
 
 export interface TokenSet { access_token: string; refresh_token: string; expires_in: number }
 

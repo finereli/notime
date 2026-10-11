@@ -17,11 +17,13 @@ export interface PostBody {
   text?: string
   media?: { media_ids: string[] }
   reply?: { in_reply_to_tweet_id: string }
+  quote_tweet_id?: string
   poll?: { options: string[]; duration_minutes: number }
   reply_settings?: string
 }
 export interface Webhook { id: string; url: string; valid: boolean }
 export interface Subscription { id: string; event_type: string; webhook_id?: string; filter?: Record<string, unknown> }
+export interface PostsPage { posts: XPost[]; oldestId?: string }
 export interface MentionsPage { posts: XPost[]; users: XUser[]; parents: XPost[]; newestId?: string }
 
 export class XError extends Error {
@@ -32,17 +34,21 @@ export class XError extends Error {
 
 export interface X {
   me(token: string): Promise<XUser>
+  // Whether the account may post past 280 characters. null when X will not say.
+  longPosts(token: string): Promise<boolean | null>
   getUser(token: string, id: string): Promise<XUser | null>
   getPost(token: string, id: string): Promise<XPost | null>
   createPost(token: string, body: PostBody): Promise<{ id: string; text: string }>
   uploadMedia(token: string, file: Blob): Promise<string>
   setAltText(token: string, mediaId: string, text: string): Promise<void>
   mentions(token: string, userId: string, sinceId?: string): Promise<MentionsPage>
+  myPosts(token: string, userId: string, range: { sinceId?: string; untilId?: string }): Promise<PostsPage>
   listWebhooks(): Promise<Webhook[]>
   createWebhook(url: string): Promise<Webhook>
   validateWebhook(id: string): Promise<void>
   listSubscriptions(token: string): Promise<Subscription[]>
   createSubscription(token: string, body: Record<string, unknown>): Promise<void>
+  deleteSubscription(token: string, id: string): Promise<void>
 }
 
 const API = 'https://api.x.com'
@@ -81,6 +87,19 @@ export function realX(env: Env): X {
   return {
     async me(token) {
       return (await call('GET', `/2/users/me?${USER_FIELDS}`, token)).data
+    },
+    async longPosts(token) {
+      // Long posts come with Premium. X reports the subscription only to the
+      // account itself, and not always, so every answer but a clear one is null.
+      try {
+        const u = (await call('GET', '/2/users/me?user.fields=subscription_type,verified_type', token))?.data
+        const sub = String(u?.subscription_type ?? '').toLowerCase()
+        if (sub.startsWith('premium')) return true
+        if (sub === 'none' || sub === 'basic') return false
+        return null
+      } catch {
+        return null
+      }
     },
     async getUser(token, id) {
       const r = await call('GET', `/2/users/${id}?${USER_FIELDS}`, token)
@@ -121,6 +140,17 @@ export function realX(env: Env): X {
       await bump(db, 'owned_read', posts.length)
       return { posts, users: r?.includes?.users ?? [], parents: r?.includes?.tweets ?? [], newestId: r?.meta?.newest_id }
     },
+    async myPosts(token, userId, range) {
+      // The owner's own timeline is an owned read too. Reposts are left out:
+      // they are someone else's words.
+      const q = new URLSearchParams({ max_results: range.sinceId ? '100' : '20', exclude: 'retweets', 'tweet.fields': 'created_at,author_id,note_tweet' })
+      if (range.sinceId) q.set('since_id', range.sinceId)
+      if (range.untilId) q.set('until_id', range.untilId)
+      const r = await call('GET', `/2/users/${userId}/tweets?${q}`, token)
+      const posts: XPost[] = (r?.data ?? []).map((p: any) => ({ id: String(p.id), text: p.note_tweet?.text ?? p.text, author_id: userId, created_at: p.created_at }))
+      await bump(db, 'owned_read', posts.length)
+      return { posts, oldestId: r?.meta?.oldest_id }
+    },
     async listWebhooks() {
       return (await call('GET', '/2/webhooks', env.X_BEARER_TOKEN))?.data ?? []
     },
@@ -136,6 +166,9 @@ export function realX(env: Env): X {
     async createSubscription(token, body) {
       await call('POST', '/2/activity/subscriptions', token, body)
     },
+    async deleteSubscription(token, id) {
+      await call('DELETE', `/2/activity/subscriptions/${id}`, token)
+    },
   }
 }
 
@@ -147,10 +180,12 @@ export function fakeX(env: Env): X {
   const id = () => String(Date.now()) + String(n++)
   return {
     async me() { return owner },
+    async longPosts() { return null },
     async getUser(_t, uid) { return { id: uid, username: 'user' + uid, name: 'User ' + uid } },
     async getPost(_t, pid) { return { id: pid, text: 'An earlier post of yours, fetched on demand.', author_id: owner.id, created_at: new Date().toISOString() } },
     async createPost(_t, body) {
       if ((body.text || '').includes('#fail')) throw new XError(403, 'You are not permitted to perform this action.')
+      if (body.quote_tweet_id && !(body.text || '').includes('#quoteok')) throw new XError(403, 'Quote posts are not available on your current plan.')
       return { id: id(), text: body.text || '' }
     },
     async uploadMedia() { return id() },
@@ -168,10 +203,21 @@ export function fakeX(env: Env): X {
         newestId: '9003',
       }
     },
+    async myPosts(_t, userId, range) {
+      if (range.sinceId || range.untilId) return { posts: [] }
+      const now = Date.now()
+      const posts = [
+        { id: '9001', text: 'Most tools get worse as they get bigger. The trick is to notice when to stop.', author_id: userId, created_at: new Date(now - 4 * 36e5).toISOString() },
+        { id: '8001', text: 'Wrote a tiny Mac app this week. It does one thing, and I already use it more than apps ten times its size.', author_id: userId, created_at: new Date(now - 30 * 36e5).toISOString() },
+        { id: '7500', text: 'The best feature request is the one you can answer by deleting something.', author_id: userId, created_at: new Date(now - 80 * 36e5).toISOString() },
+      ]
+      return { posts, oldestId: '7500' }
+    },
     async listWebhooks() { return [{ id: 'wh1', url: 'https://notime.finereli.com/api/webhook/x', valid: true }] },
     async createWebhook(url) { return { id: 'wh1', url, valid: true } },
     async validateWebhook() {},
     async listSubscriptions() { return [] },
     async createSubscription() {},
+    async deleteSubscription() {},
   }
 }

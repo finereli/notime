@@ -2,6 +2,7 @@
   import { apiJson } from '../lib/api'
   import { disablePush, enablePush, pushState, testPush, type PushState } from '../lib/push'
   import { toasts } from '$shared/lib/toast.svelte'
+  import { prefs } from '../lib/prefs.svelte'
 
   let { pushAll = $bindable(false) }: { pushAll?: boolean } = $props()
 
@@ -68,6 +69,17 @@
     }
   }
 
+  async function toggleLong() {
+    const prev = [prefs.longPosts, prefs.longPostsFrom] as const
+    prefs.set(!prefs.longPosts, 'you')
+    try {
+      await apiJson('/api/settings', { method: 'PUT', body: { longPosts: prefs.longPosts } })
+    } catch {
+      prefs.set(...prev)
+      toasts.error('The change was not saved')
+    }
+  }
+
   async function repair() {
     repairing = true
     try {
@@ -108,9 +120,25 @@
     {#if pushNote}<p class="quiet" role="status">{pushNote}</p>{/if}
 
     <div class="row">
-      <button class="btn plain" onclick={toggleAll}>{pushAll ? 'Stop notifying me about likes, reposts and follows' : 'Also notify me about likes, reposts and follows'}</button>
+      <button class="btn plain" onclick={toggleAll}>{pushAll ? 'Stop notifying me about reposts and follows' : 'Also notify me about reposts and follows'}</button>
     </div>
-    <p class="quiet">{pushAll ? 'Every like, repost and follow reaches your phone.' : 'Likes, reposts and follows stay in the list and never reach your phone.'}</p>
+    <p class="quiet">{pushAll ? 'Every repost and follow reaches your phone.' : 'Reposts and follows stay in the list and never reach your phone. Likes are not tracked at all.'}</p>
+  </section>
+
+  <section>
+    <h2>Post length</h2>
+    <p class="quiet">
+      {#if prefs.longPosts}
+        Posts can run past 280 characters, up to 25,000.
+        {prefs.longPostsFrom === 'x' ? 'X says your account has Premium.' : 'X decides when you post: it refuses a long post from an account without Premium.'}
+      {:else}
+        Posts stop at 280 characters.
+        {prefs.longPostsFrom === 'x' ? 'X says your account does not have Premium.' : prefs.longPostsFrom === 'unknown' ? 'X would not say whether your account has Premium. If it does, turn this on.' : ''}
+      {/if}
+    </p>
+    <div class="row">
+      <button class="btn plain" onclick={toggleLong}>{prefs.longPosts ? 'Limit posts to 280 characters' : 'Allow long posts'}</button>
+    </div>
   </section>
 
   <section>

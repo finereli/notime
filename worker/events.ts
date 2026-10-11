@@ -4,7 +4,7 @@ import type { XPost, XUser } from './x'
 // family serves the webhook and the mentions backfill, so a reply that
 // arrives both ways lands on the same id and is stored once.
 
-export type NotificationType = 'reply' | 'mention' | 'quote' | 'repost' | 'like' | 'follow'
+export type NotificationType = 'reply' | 'mention' | 'quote' | 'repost' | 'follow'
 
 export interface Notification {
   id: string
@@ -82,20 +82,9 @@ export function parseEvent(event: any, ownerId: string): Parsed {
       out.billed = 'event_post'
       out.notification = postNotification(POST_EVENTS[type], payload, ownerId)
     } else if (type === 'like.create') {
+      // A like asks nothing of you, so it is not a notification here. We no
+      // longer subscribe to them; this only accounts for a stray delivery.
       out.billed = 'event_like'
-      const liker = payload.liking_user_id && String(payload.liking_user_id)
-      const author = payload.liked_tweet_author_id && String(payload.liked_tweet_author_id)
-      if (liker && liker !== ownerId && payload.liked_tweet_id && (!author || author === ownerId)) {
-        out.notification = {
-          id: `like:${liker}:${payload.liked_tweet_id}`,
-          type: 'like',
-          actor_id: liker,
-          post_id: null,
-          target_post_id: String(payload.liked_tweet_id),
-          text: null,
-          created_at: iso(payload.created_at ?? event.created_at),
-        }
-      }
     } else if (type === 'follow.follow') {
       out.billed = 'event_follow'
       const source = payload?.source?.data ?? payload?.source
@@ -132,10 +121,9 @@ export function pushText(type: NotificationType, actor: string, text: string | n
     mention: `${actor} mentioned you`,
     quote: `${actor} quoted you`,
     repost: `${actor} reposted you`,
-    like: `${actor} liked your post`,
     follow: `${actor} followed you`,
   }[type]
-  const body = type === 'like' || type === 'repost' ? targetText ?? '' : text ?? ''
+  const body = type === 'repost' ? targetText ?? '' : text ?? ''
   return { title, body: body.slice(0, 240) }
 }
 

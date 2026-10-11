@@ -1,9 +1,10 @@
 // The list shows replies, mentions and quotes one by one, because each wants
-// an answer. Likes and reposts of the same post fold into one quiet line.
+// an answer. Reposts of the same post fold into one quiet line. Likes are
+// not here at all: there is nothing to do about a like.
 
 export interface Item {
   id: string
-  type: 'reply' | 'mention' | 'quote' | 'repost' | 'like' | 'follow'
+  type: 'reply' | 'mention' | 'quote' | 'repost' | 'follow'
   actor_id: string
   post_id: string | null
   target_post_id: string | null
@@ -23,7 +24,7 @@ export function collapse(items: Item[]): Row[] {
   const rows: Row[] = []
   const groups = new Map<string, Row>()
   for (const item of items) {
-    const groupKey = (item.type === 'like' || item.type === 'repost') && item.target_post_id ? `${item.type}:${item.target_post_id}` : null
+    const groupKey = item.type === 'repost' && item.target_post_id ? `${item.type}:${item.target_post_id}` : null
     const group = groupKey && groups.get(groupKey)
     if (group) {
       if (!group.items.some((i) => i.actor_id === item.actor_id)) group.items.push(item)
@@ -52,6 +53,5 @@ export const VERB: Record<Item['type'], string> = {
   mention: 'mentioned you',
   quote: 'quoted you',
   repost: 'reposted you',
-  like: 'liked your post',
   follow: 'followed you',
 }

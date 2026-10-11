@@ -3,6 +3,7 @@
   import Icon from '../components/Icon.svelte'
   import { drafts } from '../lib/drafts.svelte'
   import type { Sent } from '../lib/send.svelte'
+  import { posts } from '../lib/posts.svelte'
 
   let { onposted }: { onposted?: () => void } = $props()
   let sent = $state<Sent | null>(null)
@@ -11,6 +12,7 @@
     drafts.remove(drafts.current.id)
     sent = result
     onposted?.()
+    posts.load()
   }
 </script>
 
@@ -19,9 +21,10 @@
     <div class="done">
       <span class="tick"><Icon name="check_circle" size={40} /></span>
       <h2>{sent.ids.length > 1 ? `Posted, all ${sent.ids.length}.` : 'Posted.'}</h2>
-      <p class="quiet">It is out. There is nothing else to check here.</p>
+      <p class="quiet">It is out. Come back when you have more to add.</p>
       <div class="actions">
         <button class="primary" onclick={() => (sent = null)}>Write another</button>
+        <a href={`#/p/${sent.ids[sent.ids.length - 1]}`}>Follow up</a>
         <a href={sent.url} target="_blank" rel="noopener">Open on X <Icon name="open_in_new" size={16} /></a>
       </div>
     </div>

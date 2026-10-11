@@ -8,6 +8,8 @@
   let confirming = $state<string | null>(null)
 
   function open(id: string, replyTo?: string) {
+    if (replyTo?.startsWith('own:')) return router.go(`/p/${replyTo.slice(4)}`)
+    if (replyTo?.startsWith('quote:')) return router.go(`/p/${replyTo.slice(6)}/quote`)
     if (replyTo) return router.go(`/n/${encodeURIComponent(replyTo)}`)
     drafts.open(id)
     router.go('/')
@@ -15,7 +17,7 @@
 
   function meta(d: (typeof drafts.parked)[number]): string {
     const parts = [ago(new Date(d.updatedAt).toISOString())]
-    if (d.replyTo) parts.unshift('Reply')
+    if (d.replyTo) parts.unshift(d.replyTo.startsWith('quote:') ? 'Quote' : d.replyTo.startsWith('own:') ? 'Follow-up' : 'Reply')
     if (d.posts.length > 1) parts.push(`${d.posts.length} posts`)
     const images = imageCount(d)
     if (images) parts.push(images === 1 ? '1 image' : `${images} images`)

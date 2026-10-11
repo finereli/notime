@@ -8,7 +8,9 @@ import { postIsEmpty, type Draft } from './drafts-core'
 // failure halfway leaves a draft that knows where to pick up.
 
 export interface Sent { ids: string[]; url: string }
-export interface ReplyTarget { postId: string; notificationId: string }
+// What a post answers: a notification, or one of the owner's own posts, which
+// can be followed up (a reply to yourself) or quoted.
+export interface ReplyTarget { postId: string; notificationId?: string; quote?: boolean }
 
 // X forgets an uploaded image after a day. Stay well inside that.
 const MEDIA_TTL = 20 * 3600 * 1000
@@ -29,7 +31,7 @@ export async function sendDraft(draft: Draft, reply: ReplyTarget | null, progres
     if (!posts.length) throw new Error('Write something first')
     draft.posts = posts
     const total = posts.length
-    let previous = reply?.postId
+    let previous = reply && !reply.quote ? reply.postId : undefined
 
     for (let i = 0; i < total; i++) {
       const post = draft.posts[i]
@@ -61,6 +63,7 @@ export async function sendDraft(draft: Draft, reply: ReplyTarget | null, progres
           poll: first && draft.poll ? { options: draft.poll.options.map((o) => o.trim()).filter(Boolean), minutes: draft.poll.minutes } : null,
           reply_settings: first && !reply ? draft.replySettings : undefined,
           reply_to: previous,
+          quote_post_id: first && reply?.quote ? reply.postId : undefined,
           notification_id: first ? reply?.notificationId : undefined,
         },
       })

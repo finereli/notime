@@ -29,16 +29,16 @@ describe('character count', () => {
 describe('collapsing the list', () => {
   const item = (over: Partial<Item>): Item => ({ id: 'x', type: 'reply', actor_id: 'a', post_id: null, target_post_id: null, text: null, created_at: '2026-10-11T10:00:00.000Z', read: 1, replied_post_id: null, username: 'ana', name: 'Ana', avatar: null, target_text: null, ...over })
 
-  it('folds likes of one post into one row and leaves replies alone', () => {
+  it('folds reposts of one post into one row and leaves replies alone', () => {
     const rows = collapse([
-      item({ id: 'like:a:40', type: 'like', actor_id: 'a', target_post_id: '40', name: 'Ana', read: 0 }),
+      item({ id: 'like:a:40', type: 'repost', actor_id: 'a', target_post_id: '40', name: 'Ana', read: 0 }),
       item({ id: 'post:51', type: 'reply', actor_id: 'b', name: 'Ben' }),
-      item({ id: 'like:b:40', type: 'like', actor_id: 'b', target_post_id: '40', name: 'Ben' }),
-      item({ id: 'like:c:40', type: 'like', actor_id: 'c', target_post_id: '40', name: 'Cy' }),
-      item({ id: 'like:a:41', type: 'like', actor_id: 'a', target_post_id: '41', name: 'Ana' }),
+      item({ id: 'like:b:40', type: 'repost', actor_id: 'b', target_post_id: '40', name: 'Ben' }),
+      item({ id: 'like:c:40', type: 'repost', actor_id: 'c', target_post_id: '40', name: 'Cy' }),
+      item({ id: 'like:a:41', type: 'repost', actor_id: 'a', target_post_id: '41', name: 'Ana' }),
       item({ id: 'post:52', type: 'reply', actor_id: 'b', name: 'Ben' }),
     ])
-    expect(rows.map((r) => r.key)).toEqual(['like:40', 'post:51', 'like:41', 'post:52'])
+    expect(rows.map((r) => r.key)).toEqual(['repost:40', 'post:51', 'repost:41', 'post:52'])
     expect(rows[0].items).toHaveLength(3)
     expect(rows[0].unread).toBe(true)
     expect(who(rows[0])).toBe('Ana and 2 others')

@@ -47,7 +47,7 @@ export async function insertNotification(db: D1Database, n: Notification, raw: u
 }
 
 export const unreadCount = async (db: D1Database): Promise<number> =>
-  (await db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE read = 0`).first<{ n: number }>())?.n ?? 0
+  (await db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE read = 0 AND type != 'like'`).first<{ n: number }>())?.n ?? 0
 
 const LIST_SQL = `
   SELECT n.id, n.type, n.actor_id, n.post_id, n.target_post_id, n.text, n.created_at, n.read, n.replied_post_id,
@@ -58,7 +58,7 @@ const LIST_SQL = `
 
 export async function listNotifications(db: D1Database, before: string | null, limit: number) {
   const { results } = await db
-    .prepare(`${LIST_SQL} WHERE (?1 IS NULL OR n.created_at < ?1) ORDER BY n.created_at DESC LIMIT ?2`)
+    .prepare(`${LIST_SQL} WHERE n.type != 'like' AND (?1 IS NULL OR n.created_at < ?1) ORDER BY n.created_at DESC LIMIT ?2`)
     .bind(before, limit)
     .all()
   return results
@@ -76,7 +76,7 @@ export async function hydrate(env: Env, x: X, token: string, n: { actor_id: stri
     const u = await x.getUser(token, n.actor_id).catch(() => null)
     if (u) await saveUsers(db, [u])
   }
-  if (n.target_post_id && (n.type === 'reply' || n.type === 'quote' || n.type === 'like' || n.type === 'repost')) {
+  if (n.target_post_id && (n.type === 'reply' || n.type === 'quote' || n.type === 'repost')) {
     const have = await db.prepare(`SELECT 1 AS ok FROM x_posts WHERE id = ?1`).bind(n.target_post_id).first()
     if (!have) {
       const p = await x.getPost(token, n.target_post_id).catch(() => null)
@@ -134,4 +134,41 @@ export async function backfill(env: Env, x: X, token: string, ownerId: string): 
   const newest = page.newestId ?? page.posts[0]?.id
   if (newest) await setSetting(db, 'mentions_since', newest)
   return added
+}
+
+// --- the owner's own posts ---------------------------------------------------
+// Posts made through the app are stored as they are made, which is free. The
+// sync below fills in the ones made elsewhere. Snowflake ids sort by time, so
+// the id is the order.
+
+export async function listOwnPosts(db: D1Database, ownerId: string, before: string | null, limit: number) {
+  const oldest = await getSetting(db, 'posts_oldest')
+  const { results } = await db
+    .prepare(`SELECT id, text, created_at FROM x_posts
+              WHERE author_id = ?1 AND CAST(id AS INTEGER) >= CAST(?2 AS INTEGER) AND (?3 IS NULL OR CAST(id AS INTEGER) < CAST(?3 AS INTEGER))
+              ORDER BY CAST(id AS INTEGER) DESC LIMIT ?4`)
+    .bind(ownerId, oldest ?? '0', before, limit)
+    .all<{ id: string; text: string; created_at: string | null }>()
+  return { items: results, synced: oldest !== null }
+}
+
+export async function syncOwnPosts(env: Env, x: X, token: string, ownerId: string, older: boolean): Promise<number> {
+  const db = env.DB
+  const oldest = await getSetting(db, 'posts_oldest')
+  const range: { sinceId?: string; untilId?: string } = {}
+  if (oldest && older) range.untilId = oldest
+  else if (oldest) {
+    const newest = await db
+      .prepare(`SELECT id FROM x_posts WHERE author_id = ?1 ORDER BY CAST(id AS INTEGER) DESC LIMIT 1`)
+      .bind(ownerId)
+      .first<{ id: string }>()
+    if (newest) range.sinceId = newest.id
+  }
+  const page = await x.myPosts(token, ownerId, range)
+  await savePosts(db, page.posts)
+  const ids = page.posts.map((p) => BigInt(p.id))
+  if (oldest) ids.push(BigInt(oldest))
+  if (ids.length) await setSetting(db, 'posts_oldest', String(ids.reduce((a, b) => (b < a ? b : a))))
+  else if (!oldest) await setSetting(db, 'posts_oldest', '0')
+  return page.posts.length
 }

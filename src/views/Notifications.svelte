@@ -15,7 +15,10 @@
     if (notifications.loaded && notifications.unread) notifications.markRead()
   })
 
-  const ICON = { like: 'favorite', repost: 'repeat', follow: 'person_add' } as const
+  const ICON = { repost: 'repeat', follow: 'person_add' } as const
+
+  // Opening the list rereads it. The read is from our own database and free.
+  notifications.load()
 
   async function more() {
     loadingMore = true

@@ -103,13 +103,11 @@ describe('events', () => {
     expect(parseEvent(env('post.repost.create', { id: '54', text: 'RT @owner: hi', author_id: '2001', referenced_tweets: [{ type: 'retweeted', id: '40' }] }), OWNER).notification).toMatchObject({ id: 'repost:54', type: 'repost', target_post_id: '40' })
   })
 
-  it('reads an inbound like and ignores the owner liking someone else', () => {
+  it('drops likes: nothing to do about a like', () => {
     const like = { id: 'l1', created_at: '2026-10-11T09:30:00.000Z', liking_user_id: '2001', liked_tweet_id: '40', liked_tweet_author_id: OWNER }
     const p = parseEvent(env('like.create', like, { users: [author], tweets: [{ id: '40', text: 'my post', author_id: OWNER }] }), OWNER)
-    expect(p.notification).toMatchObject({ id: 'like:2001:40', type: 'like', actor_id: '2001', target_post_id: '40' })
-    expect(p.posts).toEqual([{ id: '40', text: 'my post', author_id: OWNER, created_at: undefined }])
+    expect(p.notification).toBeNull()
     expect(p.billed).toBe('event_like')
-    expect(parseEvent(env('like.create', { ...like, liking_user_id: OWNER, liked_tweet_author_id: '3003' }), OWNER).notification).toBeNull()
   })
 
   it('reads a follow from payload.source', () => {
@@ -137,7 +135,7 @@ describe('events', () => {
 
   it('writes push text that says who did what', () => {
     expect(pushText('reply', 'Ana Lima', 'agreed', 'my post')).toEqual({ title: 'Ana Lima replied', body: 'agreed' })
-    expect(pushText('like', 'Ana Lima', null, 'my post')).toEqual({ title: 'Ana Lima liked your post', body: 'my post' })
+    expect(pushText('repost', 'Ana Lima', 'RT @owner: my post', 'my post')).toEqual({ title: 'Ana Lima reposted you', body: 'my post' })
     expect(pushText('follow', 'Ana Lima', null, null)).toEqual({ title: 'Ana Lima followed you', body: '' })
   })
 })

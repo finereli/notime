@@ -4,7 +4,7 @@ import { bearer, createSession, deleteSession, validateSession } from './session
 import { NeedsLogin, RefreshRejected, beginLogin, d1TokenStore, exchangeCode, freshToken, refreshGrant, takeVerifier, type TokenSet } from './oauth'
 import { XError, fakeX, realX, type PostBody, type X, type XUser } from './x'
 import { crcResponse, verifySignature } from './webhook'
-import { backfill, getNotification, getSetting, hydrate, ingestEvent, listNotifications, setSetting, unreadCount } from './store'
+import { backfill, getNotification, getSetting, hydrate, ingestEvent, listNotifications, listOwnPosts, savePosts, setSetting, syncOwnPosts, unreadCount } from './store'
 import { fanOut } from './push'
 import { repair, status } from './setup'
 import { monthToDate } from './usage'
@@ -129,11 +129,26 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   if (!acct) return fail('unauthorized', 401)
   if (acct.needs_login) return fail('x_login_required', 401)
 
+  // Long posts: the owner's choice if they made one, else what X told us.
+  // X is asked once and the answer kept, including "would not say".
+  async function longPosts(): Promise<{ longPosts: boolean; longPostsFrom: 'you' | 'x' | 'unknown' }> {
+    const chosen = await getSetting(db, 'long_posts')
+    if (chosen !== null) return { longPosts: chosen === '1', longPostsFrom: 'you' }
+    let seen = await getSetting(db, 'long_posts_seen')
+    if (seen === null) {
+      const answer = await x.longPosts(await token()).catch(() => null)
+      seen = answer === null ? '?' : answer ? '1' : '0'
+      await setSetting(db, 'long_posts_seen', seen)
+    }
+    return { longPosts: seen === '1', longPostsFrom: seen === '?' ? 'unknown' : 'x' }
+  }
+
   if (pathname === '/api/me') {
     return json({
       user: { id: acct.x_user_id, username: acct.username, name: acct.name, avatar: acct.avatar },
       unread: await unreadCount(db),
       pushAll: (await getSetting(db, 'push_all')) === '1',
+      ...(await longPosts()),
     })
   }
 
@@ -182,7 +197,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   if (pathname === '/api/posts' && method === 'POST') {
     const b = (await request.json()) as {
       text?: string; media_ids?: string[]; poll?: { options: string[]; minutes: number } | null
-      reply_settings?: string; reply_to?: string; notification_id?: string
+      reply_settings?: string; reply_to?: string; quote_post_id?: string; notification_id?: string
     }
     const body: PostBody = {}
     if (b.text) body.text = b.text
@@ -190,10 +205,38 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     if (b.poll?.options?.length) body.poll = { options: b.poll.options, duration_minutes: b.poll.minutes }
     if (b.reply_settings && b.reply_settings !== 'everyone') body.reply_settings = b.reply_settings
     if (b.reply_to) body.reply = { in_reply_to_tweet_id: b.reply_to }
+    if (b.quote_post_id) body.quote_tweet_id = b.quote_post_id
     if (!body.text && !body.media) return fail('Write something first')
     const post = await x.createPost(await token(), body)
+    // Remember what we just said, so the list of past posts costs nothing to keep current.
+    await savePosts(db, [{ id: post.id, text: body.text ?? '', author_id: acct.x_user_id, created_at: new Date().toISOString() }])
     if (b.notification_id) await db.prepare(`UPDATE notifications SET replied_post_id = ?1 WHERE id = ?2`).bind(post.id, b.notification_id).run()
     return json({ id: post.id, url: `https://x.com/${acct.username}/status/${post.id}` })
+  }
+
+  if (pathname === '/api/posts' && method === 'GET') {
+    const limit = 30
+    const { items, synced } = await listOwnPosts(db, acct.x_user_id, url.searchParams.get('before'), limit)
+    return json({ items, synced, more: items.length === limit })
+  }
+
+  if (pathname === '/api/posts/sync' && method === 'POST') {
+    const b = (await request.json().catch(() => ({}))) as { older?: boolean }
+    return json({ added: await syncOwnPosts(env, x, await token(), acct.x_user_id, !!b.older) })
+  }
+
+  if (pathname.startsWith('/api/posts/') && method === 'GET') {
+    const id = pathname.slice('/api/posts/'.length)
+    if (!/^\d+$/.test(id)) return fail('not found', 404)
+    const find = () => db.prepare(`SELECT id, text, created_at, author_id FROM x_posts WHERE id = ?1`).bind(id).first<{ id: string; text: string; created_at: string | null; author_id: string | null }>()
+    let row = await find()
+    if (!row) {
+      const p = await x.getPost(await token(), id)
+      if (p) await savePosts(db, [p])
+      row = await find()
+    }
+    if (!row || row.author_id !== acct.x_user_id) return fail('not found', 404)
+    return json(row)
   }
 
   // --- push -----------------------------------------------------------------
@@ -221,8 +264,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
 
   // --- settings and plumbing ------------------------------------------------
   if (pathname === '/api/settings' && method === 'PUT') {
-    const s = (await request.json()) as { pushAll?: boolean }
+    const s = (await request.json()) as { pushAll?: boolean; longPosts?: boolean }
     if (typeof s.pushAll === 'boolean') await setSetting(db, 'push_all', s.pushAll ? '1' : '0')
+    if (typeof s.longPosts === 'boolean') await setSetting(db, 'long_posts', s.longPosts ? '1' : '0')
     return json({ ok: true })
   }
 

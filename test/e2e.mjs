@@ -6,6 +6,8 @@
 import { chromium, devices } from 'playwright'
 import { mkdirSync } from 'node:fs'
 import assert from 'node:assert/strict'
+import { createHmac } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 const BASE = 'http://127.0.0.1:8787'
 const out = process.argv[2] || 'test-results'
@@ -54,8 +56,8 @@ await page.getByRole('button', { name: /^Drafts/ }).click()
 await page.getByRole('button', { name: 'New post' }).click()
 await page.getByLabel('Post text').fill('A failure on purpose #fail')
 await page.getByRole('button', { name: 'Post', exact: true }).click()
-await page.getByRole('alert').waitFor()
-assert.match(await page.getByRole('alert').innerText(), /not permitted/)
+await page.locator('.error').waitFor()
+assert.match(await page.locator('.error').innerText(), /not permitted/)
 assert.equal(await page.getByLabel('Post text').inputValue(), 'A failure on purpose #fail', 'a refused post keeps its text')
 await shot('03-post-refused')
 await page.getByLabel('Post text').fill('')
@@ -82,11 +84,28 @@ await page.getByRole('button', { name: 'Post', exact: true }).click()
 await page.getByText('Posted.').waitFor()
 await page.getByRole('button', { name: 'Write another' }).click()
 
+// --- X delivers some events, signed the way X signs them ---
+const secret = readFileSync('.dev.vars', 'utf8').match(/^X_CLIENT_SECRET=(.*)$/m)[1]
+const now = new Date().toISOString()
+const deliver = async (event_type, payload, includes = {}) => {
+  const body = JSON.stringify({ data: { event_uuid: crypto.randomUUID(), created_at: now, filter: { user_id: '1000' }, event_type, payload, includes } })
+  const res = await fetch(BASE + '/api/webhook/x', { method: 'POST', body, headers: { 'X-Twitter-Webhooks-Signature-OAuth2': 'sha256=' + createHmac('sha256', secret).update(body).digest('base64') } })
+  assert.equal(res.status, 200)
+}
+const repost = (id, author) => ({ id, text: 'RT @finereli: Most tools get worse', author_id: author, created_at: now, referenced_tweets: [{ type: 'retweeted', id: '9001' }] })
+await deliver('post.repost.create', repost('7101', '2001'), { users: [{ id: '2001', username: 'ana_writes', name: 'Ana Lima' }] })
+await deliver('post.repost.create', repost('7102', '4004'), { users: [{ id: '4004', username: 'sam', name: 'Sam Okafor' }] })
+await deliver('like.create', { id: 'l1', created_at: now, liking_user_id: '6006', liked_tweet_id: '9001', liked_tweet_author_id: '1000' }, { users: [{ id: '6006', username: 'lee', name: 'Lee Park' }] })
+await deliver('follow.follow', { source: { data: { id: '5005', username: 'mira', name: 'Mira Chen' } }, target: { data: { id: '1000', username: 'finereli' } } })
+assert.equal((await fetch(BASE + '/api/webhook/x', { method: 'POST', body: '{}' })).status, 403, 'an unsigned delivery is refused')
+await page.waitForTimeout(800)
+
 // --- notifications ---
 await page.getByRole('button', { name: 'Notifications', exact: true }).click()
 await page.getByText('Ana Lima').first().waitFor()
 await shot('07-notifications')
-assert.ok(await page.getByText(/and Sam Okafor|and Ana Lima/).count(), 'likes of one post fold into one row')
+assert.ok(await page.getByText(/and Sam Okafor|and Ana Lima/).count(), 'reposts of one post fold into one row')
+assert.equal(await page.getByText('Lee Park').count(), 0, 'likes never reach the list')
 
 // --- reply, with a draft that survives leaving ---
 await page.getByText('this is the clearest explanation').click()
@@ -105,13 +124,52 @@ await page.getByText('Replied.').waitFor()
 await page.getByRole('button', { name: 'Back' }).click()
 await page.getByText('You replied').waitFor()
 
+// --- your posts: follow up on one, then quote one ---
+await page.goto(BASE + '/#/posts')
+await page.getByText('The best feature request').waitFor()
+await page.getByText('Which do you reach for first?').first().waitFor() // posted through the app a moment ago
+await shot('08b-posts')
+await page.locator('li', { hasText: 'Most tools get worse' }).getByRole('link', { name: 'Follow up' }).click()
+await page.getByLabel('Post text').fill('A follow-up, a day later: stopping is a feature.')
+await page.getByRole('button', { name: 'Add another post' }).waitFor()
+await shot('08c-follow-up')
+await page.getByRole('button', { name: 'Post', exact: true }).click()
+await page.getByText('Posted.').waitFor()
+await page.getByRole('button', { name: 'Back' }).click()
+await page.getByText('A follow-up, a day later').first().waitFor()
+
+await page.locator('li', { hasText: 'The best feature request' }).getByRole('link', { name: 'Quote' }).click()
+await page.getByLabel('Post text').fill('Still true.')
+await page.getByRole('button', { name: 'Quote', exact: true }).click()
+await page.locator('.error').waitFor()
+assert.match(await page.locator('.error').innerText(), /not available on your current plan/)
+await shot('08d-quote-refused')
+await page.getByRole('button', { name: 'quote with a link instead' }).click()
+assert.match(await page.getByLabel('Post text').inputValue(), /^Still true\. https:\/\/x\.com\/finereli\/status\/7500$/)
+await page.getByText('Posts with a link cost $0.20 to send.').waitFor()
+await page.getByLabel('Post text').fill('')
+
+// --- long posts: held at 280 until allowed in settings ---
+await page.goto(BASE + '/#/')
+await page.getByLabel('Post text').fill('word '.repeat(70))
+await page.getByText(/over the limit of 280/).waitFor()
+assert.equal(await page.getByRole('button', { name: 'Post', exact: true }).isDisabled(), true)
+await page.goto(BASE + '/#/settings')
+await page.getByRole('button', { name: 'Allow long posts' }).click()
+await page.getByRole('button', { name: 'Limit posts to 280 characters' }).waitFor()
+await page.goto(BASE + '/#/')
+await page.getByText(/a long post/).waitFor()
+assert.equal(await page.getByRole('button', { name: 'Post', exact: true }).isDisabled(), false)
+await shot('08e-long-post')
+await page.getByLabel('Post text').fill('')
+
 // --- settings, light and dark ---
 await page.goto(BASE + '/#/settings')
 await page.getByText('Connection to X').waitFor()
 await page.getByText('this month, roughly').waitFor()
-await page.getByRole('button', { name: 'Also notify me about likes' }).click()
-await page.getByRole('button', { name: 'Stop notifying me about likes' }).waitFor()
-await page.getByRole('button', { name: 'Stop notifying me about likes' }).click()
+await page.getByRole('button', { name: 'Also notify me about reposts' }).click()
+await page.getByRole('button', { name: 'Stop notifying me about reposts' }).waitFor()
+await page.getByRole('button', { name: 'Stop notifying me about reposts' }).click()
 await shot('09-settings')
 await page.getByRole('button', { name: 'Menu', exact: true }).click()
 await page.getByRole('button', { name: 'Dark mode' }).waitFor()

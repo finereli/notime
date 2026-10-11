@@ -6,7 +6,8 @@
   import { drafts } from '../lib/drafts.svelte'
   import { postIsEmpty, type Draft, type DraftImage } from '../lib/drafts-core'
   import { sendDraft, sending, type ReplyTarget, type Sent } from '../lib/send.svelte'
-  import { LIMIT, hasUrl, weightedLength } from '../lib/text'
+  import { LIMIT, LONG_LIMIT, hasUrl, weightedLength } from '../lib/text'
+  import { prefs } from '../lib/prefs.svelte'
   import { isImageFile, resizeImage } from '$shared/lib/image-resize'
 
   let { draft, reply = null, placeholder = 'What do you want to say?', onsent }: {
@@ -25,8 +26,12 @@
   const anyImages = $derived(draft.posts.some((p) => p.images.length > 0))
   const linked = $derived(draft.posts.some((p) => !p.sentId && hasUrl(p.text)))
   const pollReady = $derived(!draft.poll || (draft.poll.options.filter((o) => o.trim()).length >= 2 && !!draft.posts[0].text.trim()))
-  const canSend = $derived(!sending.active && pollReady && draft.posts.some((p) => !p.sentId && !postIsEmpty(p)))
-  const sendLabel = $derived(reply ? 'Reply' : resuming ? 'Post the rest' : thread ? 'Post all' : 'Post')
+  const limit = $derived(prefs.longPosts ? LONG_LIMIT : LIMIT)
+  const tooLong = $derived(draft.posts.some((p) => !p.sentId && weightedLength(p.text) > limit))
+  const canSend = $derived(!sending.active && pollReady && !tooLong && draft.posts.some((p) => !p.sentId && !postIsEmpty(p)))
+  const sendLabel = $derived(resuming ? 'Post the rest' : thread ? 'Post all' : reply?.quote ? 'Quote' : reply?.notificationId ? 'Reply' : 'Post')
+  // Answering someone is one post. Following up on yourself can run long.
+  const single = $derived(!!reply?.notificationId)
 
   const DURATIONS = [
     { minutes: 60, label: '1 hour' },
@@ -190,7 +195,11 @@
       {/if}
 
       {#if count > 0 && !post.sentId}
-        <p class="count" class:long={count > LIMIT}>{count}{count > LIMIT ? ', a long post' : ` of ${LIMIT}`}</p>
+        <p class="count" class:long={count > LIMIT && count <= limit} class:over={count > limit}>
+          {#if count > limit}{count - limit} over the limit of {limit.toLocaleString()}
+          {:else if count > LIMIT}{count.toLocaleString()}, a long post
+          {:else}{count} of {LIMIT}{/if}
+        </p>
       {/if}
     </section>
   {/each}
@@ -229,6 +238,9 @@
     <input bind:this={picker} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden
       onchange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = '' }} />
     <button class="icon" onclick={() => picker?.click()} disabled={sending.active} aria-label="Add images" title="Add images"><Icon name="add_photo_alternate" /></button>
+    {#if reply && !single}
+      <button class="icon" onclick={addPost} disabled={sending.active} aria-label="Add another post" title="Add another post"><Icon name="add" /></button>
+    {/if}
     {#if !reply}
       <button class="icon" class:on={!!draft.poll} onclick={togglePoll} disabled={sending.active} aria-label={draft.poll ? 'Remove poll' : 'Add a poll'} title={draft.poll ? 'Remove poll' : 'Add a poll'}><Icon name="ballot" /></button>
       <button class="icon" onclick={addPost} disabled={sending.active} aria-label="Add another post" title="Add another post"><Icon name="add" /></button>
@@ -309,6 +321,7 @@
 
   .count { align-self: flex-end; font-size: 0.75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
   .count.long { color: var(--warn); }
+  .count.over { color: var(--danger); }
 
   .poll { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-raised); }
   .option { display: flex; gap: 4px; align-items: center; }
