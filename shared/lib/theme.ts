@@ -24,7 +24,7 @@
 //    and never neon. Sets theme-color to the dark surface in dark mode and
 //    to the accent in light.
 
-const DARK_KEY = 'app.dark.v1'
+const DARK_KEY = 'notime.dark.v1'
 const DARK_SURFACE = '#1e1e2e' // Catppuccin Mocha base
 
 export function isDark(): boolean {
@@ -35,7 +35,7 @@ export function setDarkMode(on: boolean, accentHex: string | null = null) {
   document.documentElement.classList.toggle('dark', on)
   localStorage.setItem(DARK_KEY, on ? '1' : '0')
   if (accentHex) applyAccent(accentHex, on)
-  else setThemeColorMeta(on ? DARK_SURFACE : getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())
+  else setThemeColorMeta(on ? DARK_SURFACE : getComputedStyle(document.documentElement).getPropertyValue('--accent-deep').trim())
 }
 
 export function hexToHsl(hex: string): [number, number, number] {

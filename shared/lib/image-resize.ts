@@ -6,7 +6,7 @@
 //
 //   const { blob, width, height } = await resizeImage(file)
 
-const MAX_DIMENSION = 1568
+const MAX_DIMENSION = 2048
 const JPEG_QUALITY = 0.85
 const MAX_FILE_SIZE = 4 * 1024 * 1024
 

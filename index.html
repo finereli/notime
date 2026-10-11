@@ -1,24 +1,32 @@
 <!doctype html>
 <!-- pwa-kit: shell/index.html v6 -->
-<html lang="en">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover for the safe areas; no user scaling because this is
          an app, not a page (a deliberate choice - see reference/shell.md). -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content"
     />
-    <title>My App</title>
-    <meta name="description" content="" />
+    <title>notime</title>
+    <meta name="description" content="Post to X and answer your notifications. No timeline." />
 
-    <meta name="theme-color" content="#3d5a40" />
+    <meta name="theme-color" content="#1f4a41" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="My App" />
+    <meta name="apple-mobile-web-app-title" content="notime" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="icon" href="/icons/icon-192.png" type="image/png" />
+    <!-- Dark mode has to land before first paint, or returning users get a
+         white flash. See shared/lib/theme.ts. -->
+    <script>
+      (function(){var d=localStorage.getItem('notime.dark.v1');
+      if(d==='1'||(d===null&&matchMedia('(prefers-color-scheme: dark)').matches)){
+        document.documentElement.classList.add('dark');
+        document.querySelector('meta[name="theme-color"]').setAttribute('content','#1e1e2e')}})()
+    </script>
   </head>
   <body>
     <div id="app"></div>

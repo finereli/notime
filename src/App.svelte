@@ -1,0 +1,188 @@
+<!-- pwa-kit: shell/src/App.svelte v6 -->
+<script lang="ts">
+  // Shell: login gate, top bar, one scrolling body, drawer. See
+  // reference/shell.md. The app has three places to be and no feed.
+  import TopBar from '$shared/ui/TopBar.svelte'
+  import Drawer from '$shared/ui/Drawer.svelte'
+  import ResetButton from '$shared/ui/ResetButton.svelte'
+  import Toast from '$shared/ui/Toast.svelte'
+  import { isDark, setDarkMode } from '$shared/lib/theme'
+  import Icon from './components/Icon.svelte'
+  import InstallBanner from './components/InstallBanner.svelte'
+  import Avatar from './components/Avatar.svelte'
+  import Login from './views/Login.svelte'
+  import Write from './views/Write.svelte'
+  import Notifications from './views/Notifications.svelte'
+  import Detail from './views/Detail.svelte'
+  import Drafts from './views/Drafts.svelte'
+  import Settings from './views/Settings.svelte'
+  import { apiJson } from './lib/api'
+  import { auth, type User } from './lib/auth.svelte'
+  import { drafts } from './lib/drafts.svelte'
+  import { notifications } from './lib/notifications.svelte'
+  import { router } from './lib/router.svelte'
+  import { toasts } from '$shared/lib/toast.svelte'
+
+  auth.init()
+  router.start()
+
+  let menuOpen = $state(false)
+  let dark = $state(isDark())
+  let pushAll = $state(false)
+  let engaged = $state(false)
+  router.onChange(() => (menuOpen = false))
+
+  const view = $derived(router.route.view)
+  const detailId = $derived(router.route.view === 'detail' ? router.route.id : '')
+  const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', drafts: 'Drafts', settings: 'Settings' }[view])
+  const entries = $derived([
+    { label: 'Write', hash: '/', current: view === 'write' },
+    { label: 'Notifications', hash: '/notifications', current: view === 'notifications' || view === 'detail', count: notifications.unread || undefined },
+    { label: 'Drafts', hash: '/drafts', current: view === 'drafts', count: drafts.parked.length || undefined },
+    { label: 'Settings', hash: '/settings', current: view === 'settings' },
+  ])
+
+  // Revalidate the stored session in the background. The app is already on
+  // screen from what the device remembers; a dead session drops to login.
+  async function refresh() {
+    if (!auth.signedIn) return
+    try {
+      const me = await apiJson<{ user: User; unread: number; pushAll: boolean }>('/api/me')
+      auth.setUser(me.user)
+      pushAll = me.pushAll
+      notifications.setUnread(me.unread)
+    } catch {}
+    notifications.load()
+  }
+  refresh()
+  auth.onChange(refresh)
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && refresh())
+
+  // The service worker tells an open app when a push arrived or was tapped.
+  navigator.serviceWorker?.addEventListener('message', (e) => {
+    if (e.data?.type === 'push') notifications.load()
+    if (e.data?.type === 'open' && typeof e.data.url === 'string') {
+      location.hash = e.data.url.replace(/^\/?#?/, '')
+      notifications.load()
+    }
+  })
+
+  // Installed apps open outside links in the real browser.
+  if (matchMedia('(display-mode: standalone)').matches) {
+    document.addEventListener('click', (e) => {
+      const a = (e.target as HTMLElement).closest?.('a[href]') as HTMLAnchorElement | null
+      if (a && a.hostname !== location.hostname) { e.preventDefault(); window.open(a.href, '_blank') }
+    })
+  }
+
+  function toggleDark() {
+    dark = !dark
+    setDarkMode(dark)
+  }
+
+  async function check() {
+    try {
+      const added = await notifications.check()
+      if (!added) toasts.error('Nothing new', 2000)
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : 'Could not check X')
+    }
+  }
+</script>
+
+<Toast />
+
+{#if !auth.signedIn}
+  <Login />
+{:else}
+  <div class="shell">
+    {#if view === 'detail'}
+      <TopBar leading="back" {title} onleading={() => router.back('/notifications')} />
+    {:else if view === 'write'}
+      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Notifications" ontrailing={() => router.go('/notifications')}>
+        {#snippet trailing()}
+          <span class="bell"><Icon name="notifications" />{#if notifications.unread}<i></i>{/if}</span>
+        {/snippet}
+      </TopBar>
+    {:else if view === 'notifications'}
+      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for missed mentions" ontrailing={check}>
+        {#snippet trailing()}
+          <span class:turning={notifications.checking}><Icon name="refresh" /></span>
+        {/snippet}
+      </TopBar>
+    {:else if view === 'drafts'}
+      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="New post" ontrailing={() => { drafts.startNew(); router.go('/') }}>
+        {#snippet trailing()}<Icon name="edit_square" />{/snippet}
+      </TopBar>
+    {:else}
+      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} />
+    {/if}
+
+    <main class="body">
+      {#if view === 'notifications'}
+        <Notifications />
+      {:else if view === 'detail'}
+        {#key detailId}<Detail id={detailId} />{/key}
+      {:else if view === 'drafts'}
+        <Drafts />
+      {:else if view === 'settings'}
+        <Settings bind:pushAll />
+      {:else}
+        <Write onposted={() => (engaged = true)} />
+      {/if}
+    </main>
+
+    <InstallBanner when={engaged || view === 'notifications'} text="Install notime to get notifications" bottom="24px" />
+  </div>
+
+  <Drawer open={menuOpen} onclose={() => (menuOpen = false)} {entries}>
+    {#snippet brand()}
+      <span class="brand">notime</span>
+    {/snippet}
+    {#snippet footer()}
+      {#if auth.user}
+        <div class="user">
+          <Avatar src={auth.user.avatar} name={auth.user.name || auth.user.username} size={32} />
+          <span>@{auth.user.username}</span>
+        </div>
+      {/if}
+      <button class="foot-btn" onclick={toggleDark} tabindex={menuOpen ? 0 : -1}>
+        <Icon name={dark ? 'light_mode' : 'dark_mode'} size={20} />{dark ? 'Light mode' : 'Dark mode'}
+      </button>
+      <button class="foot-btn" onclick={() => auth.signOut()} tabindex={menuOpen ? 0 : -1}>
+        <Icon name="logout" size={20} />Sign out
+      </button>
+      <!-- The reload icon is the always-there escape hatch (forget the cached
+           app, load it fresh); it lights up when a new version is waiting. -->
+      <p class="build">
+        <span>Version {__BUILD__}</span>
+        <ResetButton tabindex={menuOpen ? 0 : -1} />
+      </p>
+    {/snippet}
+  </Drawer>
+{/if}
+
+<style>
+  .shell { display: flex; flex-direction: column; height: 100%; position: relative; }
+  /* The one scroller. */
+  .body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+  @media (min-width: 768px) {
+    .shell { margin-inline-start: min(78vw, 300px); }
+  }
+  .brand { font-family: var(--font-write); font-size: 1.5rem; color: var(--accent-deep); }
+  :global(.dark) .brand { color: var(--accent-light); }
+  .user { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; }
+  .foot-btn { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; font-size: 0.9rem; color: var(--text-primary); }
+  .build { display: flex; align-items: center; gap: 6px; font-size: 0.65rem; color: var(--text-secondary); margin-top: 8px; }
+  .build span { opacity: 0.6; }
+
+  .bell { position: relative; display: grid; }
+  .bell i { position: absolute; top: 0; right: 0; width: 9px; height: 9px; border-radius: 50%; background: var(--mark); border: 2px solid var(--accent-deep); }
+  .turning { display: grid; animation: spin 0.8s linear infinite; }
+</style>

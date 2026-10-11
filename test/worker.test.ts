@@ -2,7 +2,7 @@ import { createHmac, webcrypto } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { crcResponse, verifySignature } from '../worker/webhook'
 import { encryptPayload, vapidToken } from '../worker/push'
-import { b64uDecode, b64uEncode, concat, utf8 } from '../worker/bytes'
+import { b64uDecode, b64uEncode, concat, utf8, type Bytes } from '../worker/bytes'
 import { mentionNotification, parseEvent, pushText } from '../worker/events'
 import { NeedsLogin, RefreshRejected, freshToken, type TokenRow, type TokenSet, type TokenStore } from '../worker/oauth'
 import { cost, hasUrl } from '../worker/usage'
@@ -54,7 +54,7 @@ describe('web push', () => {
 
     const serverKey = await subtle.importKey('raw', serverPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, [])
     const shared = new Uint8Array(await subtle.deriveBits({ name: 'ECDH', public: serverKey }, ua.privateKey, 256))
-    const hkdf = async (s: Uint8Array, ikm: Uint8Array, info: Uint8Array, n: number) =>
+    const hkdf = async (s: Bytes, ikm: Bytes, info: Bytes, n: number) =>
       new Uint8Array(await subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: s, info }, await subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']), n * 8))
     const ikm = await hkdf(auth, shared, concat(utf8('WebPush: info\0'), uaPublic, serverPublic), 32)
     const cek = await hkdf(salt, ikm, utf8('Content-Encoding: aes128gcm\0'), 16)
