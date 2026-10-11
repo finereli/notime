@@ -17,8 +17,9 @@ account's API credit.
   waits under Drafts.
 - Notifications: replies, mentions and quotes, each with a reply box and a
   heart. A back-and-forth with one person folds into one row that carries
-  the whole conversation. Likes, reposts and follows are left out: there is
-  nothing to do about them.
+  the whole conversation. Likes and follows are one cumulative line each
+  (per post, and for followers) that rises to the top as it grows, with no
+  push. Reposts are left out.
 - Messages: one-to-one direct messages, read and answered as a chat. X's API
   only reaches conversations that are not end-to-end encrypted.
 - Push: replies, mentions, quotes and messages reach your phone.

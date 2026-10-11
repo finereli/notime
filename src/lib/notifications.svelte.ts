@@ -52,7 +52,7 @@ class Notifications {
   }
 
   async markRead() {
-    if (!this.unread) return
+    if (!this.unread && !this.items.some((i) => !i.read)) return
     this.setUnread(0)
     await apiJson('/api/notifications/read', { method: 'POST' }).catch(() => {})
   }

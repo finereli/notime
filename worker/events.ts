@@ -25,11 +25,15 @@ export interface Dm {
   created_at: string
 }
 
+export interface Activity { kind: 'like' | 'follow'; post_id: string; actor_id: string; at: string }
+
 export interface Parsed {
   notification: Notification | null
   dm: Dm | null
   // A post the owner liked, on X or anywhere.
   liked: string | null
+  // Someone liked one of the owner's posts, or followed the owner.
+  activity: Activity | null
   users: XUser[]
   posts: XPost[]
   billed: string | null
@@ -91,7 +95,7 @@ const POST_EVENTS: Record<string, NotificationType> = {
   'post.quote.create': 'quote',
 }
 
-const STRAYS: Record<string, string> = { 'post.repost.create': 'event_post', 'follow.follow': 'event_follow' }
+const STRAYS: Record<string, string> = { 'post.repost.create': 'event_post' }
 
 // A direct message, in either of the shapes X uses: the v2 dm_event, or the
 // older message_create that the Activity API still delivers.
@@ -121,7 +125,7 @@ export function parseDm(ev: any, ownerId: string): Dm | null {
 // Never throws: X warns that fields come and go, and one odd payload must not
 // fail the delivery.
 export function parseEvent(event: any, ownerId: string): Parsed {
-  const out: Parsed = { notification: null, dm: null, liked: null, users: [], posts: [], billed: null }
+  const out: Parsed = { notification: null, dm: null, liked: null, activity: null, users: [], posts: [], billed: null }
   try {
     const type: string = event?.event_type ?? ''
     const payload = event?.payload ?? {}
@@ -135,9 +139,20 @@ export function parseEvent(event: any, ownerId: string): Parsed {
       out.posts.push(...cleanPosts([payload]))
     } else if (type === 'like.create') {
       out.billed = 'event_like'
-      // Only the owner's own likes count. Likes on the owner's posts ask
-      // nothing and are not subscribed to; a stray one is ignored.
-      if (String(payload?.liking_user_id ?? '') === ownerId && payload?.liked_tweet_id) out.liked = String(payload.liked_tweet_id)
+      const liker = String(payload?.liking_user_id ?? '')
+      const post = payload?.liked_tweet_id ? String(payload.liked_tweet_id) : ''
+      // The owner's own like marks a reply as dealt with. Someone else's like
+      // on the owner's post adds to that post's one cumulative line.
+      if (liker === ownerId && post) out.liked = post
+      else if (liker && post && String(payload?.liked_tweet_author_id ?? '') === ownerId) out.activity = { kind: 'like', post_id: post, actor_id: liker, at: iso(payload.created_at ?? event?.created_at) }
+    } else if (type === 'follow.follow') {
+      out.billed = 'event_follow'
+      const source = payload?.source?.data ?? payload?.source
+      const target = payload?.target?.data ?? payload?.target
+      out.users.push(...cleanUsers([source]))
+      if (source?.id && String(source.id) !== ownerId && (!target?.id || String(target.id) === ownerId)) {
+        out.activity = { kind: 'follow', post_id: '', actor_id: String(source.id), at: iso(event?.created_at) }
+      }
     } else if (STRAYS[type]) {
       // No longer subscribed to, so nothing to show; this only accounts for
       // a delivery that was already on its way.

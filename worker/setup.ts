@@ -6,17 +6,17 @@ import { getSetting, setSetting } from './store'
 // Activity subscription per kind of event. Repair is safe to run any number
 // of times. It only creates what is missing.
 
-// Only what asks something of the owner. Likes on the owner's posts,
-// reposts and follows are deliberately absent: nothing to do about them, and
-// each one costs. The owner's own likes are here, outbound only, because a
-// heart given on X marks a reply as dealt with.
+// What asks something of the owner, plus the two signals about the owner's
+// own audience: likes (both ways: the owner's own mark a reply as dealt
+// with, others' add up per post) and follows. Reposts are left out.
 export const EVENTS: Array<{ type: string; label: string; filter?: Record<string, string> }> = [
   { type: 'post.reply.create', label: 'Replies' },
   { type: 'post.mention.create', label: 'Mentions' },
   { type: 'post.quote.create', label: 'Quotes' },
   { type: 'dm.received', label: 'Messages received' },
   { type: 'dm.sent', label: 'Messages you send elsewhere' },
-  { type: 'like.create', label: 'Your likes on X', filter: { direction: 'outbound' } },
+  { type: 'like.create', label: 'Likes' },
+  { type: 'follow.follow', label: 'Follows' },
 ]
 
 // A subscription matches an event when the type and the direction agree. An

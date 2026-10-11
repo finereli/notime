@@ -124,7 +124,19 @@ describe('events', () => {
     const mine = parseEvent(env('like.create', { id: 'l2', liking_user_id: OWNER, liked_tweet_id: '51', liked_tweet_author_id: '2001' }), OWNER)
     expect(mine.liked).toBe('51')
     expect(mine.billed).toBe('event_like')
-    expect(parseEvent(env('like.create', { id: 'l3', liking_user_id: '2001', liked_tweet_id: '40', liked_tweet_author_id: OWNER }), OWNER).liked).toBeNull()
+    const theirs = parseEvent(env('like.create', { id: 'l3', created_at: '2026-10-11T09:30:00.000Z', liking_user_id: '2001', liked_tweet_id: '40', liked_tweet_author_id: OWNER }), OWNER)
+    expect(theirs.liked).toBeNull()
+    expect(theirs.activity).toEqual({ kind: 'like', post_id: '40', actor_id: '2001', at: '2026-10-11T09:30:00.000Z' })
+    expect(theirs.notification).toBeNull()
+    // A like between two other people is none of our business.
+    expect(parseEvent(env('like.create', { liking_user_id: '2001', liked_tweet_id: '41', liked_tweet_author_id: '3003' }), OWNER).activity).toBeNull()
+  })
+
+  it('counts a follow toward the followers line, never as a notification', () => {
+    const p = parseEvent(env('follow.follow', { source: { data: author }, target: { data: { id: OWNER, username: 'owner' } } }), OWNER)
+    expect(p.notification).toBeNull()
+    expect(p.activity).toMatchObject({ kind: 'follow', post_id: '', actor_id: '2001' })
+    expect(p.users[0]).toMatchObject({ id: '2001', username: 'ana' })
   })
 
   it('drops likes: nothing to do about a like', () => {

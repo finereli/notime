@@ -73,7 +73,53 @@ export async function listNotifications(db: D1Database, before: string | null, l
     .prepare(`${LIST_SQL} WHERE n.type IN ${KINDS} AND (?1 IS NULL OR n.created_at < ?1) ORDER BY n.created_at DESC LIMIT ?2`)
     .bind(before, limit)
     .all()
-  return results.map(clean)
+  // Interleave the cumulative lines by their latest like or follow, then cut
+  // the page; the next page starts below the last line shown.
+  const merged = [...results.map(clean), ...(await activityLines(db, before, limit))]
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
+  return { items: merged.slice(0, limit), more: results.length === limit || merged.length > limit }
+}
+
+// One line per liked post and one for followers: the count, the latest two
+// names, and the time of the latest, which is what moves the line up.
+async function activityLines(db: D1Database, before: string | null, limit: number) {
+  const seen = (await getSetting(db, 'activity_seen_at')) ?? ''
+  const { results: groups } = await db
+    .prepare(`SELECT kind, post_id, COUNT(*) AS n, MAX(at) AS at FROM activity GROUP BY kind, post_id
+              HAVING ?1 IS NULL OR MAX(at) < ?1 ORDER BY at DESC LIMIT ?2`)
+    .bind(before, limit)
+    .all<{ kind: string; post_id: string; n: number; at: string }>()
+  if (!groups.length) return []
+  const latest = await db.batch(
+    groups.map((g) =>
+      db
+        .prepare(`SELECT a.actor_id, u.username, u.name, u.avatar FROM activity a LEFT JOIN x_users u ON u.id = a.actor_id
+                  WHERE a.kind = ?1 AND a.post_id = ?2 ORDER BY a.at DESC LIMIT 2`)
+        .bind(g.kind, g.post_id),
+    ),
+  )
+  const posts = await db.batch(groups.map((g) => db.prepare(`SELECT text FROM x_posts WHERE id = ?1`).bind(g.post_id)))
+  return groups.map((g, i) => {
+    const [first, second] = (latest[i].results ?? []) as Array<Record<string, any>>
+    const liked = g.kind === 'like'
+    return {
+      id: liked ? `likes:${g.post_id}` : 'follows',
+      type: liked ? 'likes' : 'follows',
+      actor_id: first?.actor_id ?? '',
+      post_id: liked ? g.post_id : null,
+      target_post_id: liked ? g.post_id : null,
+      text: null,
+      created_at: g.at,
+      read: g.at <= seen ? 1 : 0,
+      replied_post_id: null,
+      username: first?.username ?? null,
+      name: first?.name ?? null,
+      avatar: first?.avatar ?? null,
+      target_text: liked ? ((posts[i].results?.[0] as any)?.text ?? null) : null,
+      count: g.n,
+      second: second ? second.name || (second.username ? '@' + second.username : null) : null,
+    } as Record<string, any>
+  })
 }
 
 const clean = (r: Record<string, any>): Record<string, any> => ({ ...r, answered: !!r.answered, liked: !!r.liked })
@@ -131,6 +177,12 @@ export async function ingestEvent(env: Env, x: X, getToken: () => Promise<string
   await setSetting(db, 'last_event_at', new Date().toISOString())
   await saveUsers(db, parsed.users)
   await savePosts(db, parsed.posts)
+  if (parsed.activity) {
+    // Never a push: worth seeing, nothing to answer.
+    const a = parsed.activity
+    await db.prepare(`INSERT OR IGNORE INTO activity (kind, post_id, actor_id, at) VALUES (?1, ?2, ?3, ?4)`).bind(a.kind, a.post_id, a.actor_id, a.at).run()
+    return
+  }
   if (parsed.liked) {
     await db.prepare(`UPDATE notifications SET liked = 1, read = 1 WHERE post_id = ?1`).bind(parsed.liked).run()
     return

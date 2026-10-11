@@ -74,7 +74,7 @@
   const KIND: Record<string, string> = {
     post_create: 'Posts', post_create_url: 'Posts with a link', post_read: 'Posts looked up', user_read: 'People looked up',
     owned_read: 'Your posts and mentions read', media_metadata: 'Image descriptions', event_post: 'Replies, mentions, quotes delivered',
-    event_like: 'Your likes on X', event_follow: 'Follows delivered', event_dm: 'Messages delivered', like: 'Likes', unlike: 'Unlikes',
+    event_like: 'Likes delivered', event_follow: 'Follows delivered', event_dm: 'Messages delivered', like: 'Likes', unlike: 'Unlikes',
     dm_read: 'Messages read from X', dm_send: 'Messages sent', like_read: 'Your likes read from X',
   }
   const money = (n: number) => '$' + n.toFixed(2)

@@ -6,7 +6,8 @@
 
 export interface Item {
   id: string
-  type: 'reply' | 'mention' | 'quote'
+  // likes and follows are cumulative lines: one per post, one for followers.
+  type: 'reply' | 'mention' | 'quote' | 'likes' | 'follows'
   actor_id: string
   post_id: string | null
   target_post_id: string | null
@@ -23,6 +24,20 @@ export interface Item {
   // Some post of the owner's answers this one (sent here or on X).
   answered?: boolean
   liked?: boolean
+  // Cumulative lines only: how many, and the name of the one before the latest.
+  count?: number
+  second?: string | null
+}
+
+export const cumulative = (i: Item) => i.type === 'likes' || i.type === 'follows'
+
+// "Ana Lima", "Ana Lima and Ben", "Ana Lima and 12 others".
+export function crowd(i: Item): string {
+  const first = displayName(i)
+  const n = i.count ?? 1
+  if (n <= 1) return first
+  if (n === 2 && i.second) return `${first} and ${i.second}`
+  return `${first} and ${n - 1} others`
 }
 
 // items runs oldest to newest; the last one is what the row shows.
@@ -62,4 +77,6 @@ export const VERB: Record<Item['type'], string> = {
   reply: 'replied',
   mention: 'mentioned you',
   quote: 'quoted you',
+  likes: 'liked your post',
+  follows: 'followed you',
 }

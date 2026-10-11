@@ -173,12 +173,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   // --- notifications --------------------------------------------------------
   if (pathname === '/api/notifications' && method === 'GET') {
     const limit = Math.min(Number(url.searchParams.get('limit')) || 40, 100)
-    const items = await listNotifications(db, url.searchParams.get('before'), limit)
-    return json({ items, unread: await unreadCount(db), more: items.length === limit })
+    const { items, more } = await listNotifications(db, url.searchParams.get('before'), limit)
+    return json({ items, unread: await unreadCount(db), more })
   }
 
   if (pathname === '/api/notifications/read' && method === 'POST') {
     await db.prepare(`UPDATE notifications SET read = 1 WHERE read = 0`).run()
+    await setSetting(db, 'activity_seen_at', new Date().toISOString())
     return json({ ok: true })
   }
 

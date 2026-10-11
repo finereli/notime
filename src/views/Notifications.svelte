@@ -2,7 +2,7 @@
   import Avatar from '../components/Avatar.svelte'
   import Icon from '../components/Icon.svelte'
   import { notifications } from '../lib/notifications.svelte'
-  import { VERB, collapse, displayName } from '../lib/collapse'
+  import { VERB, collapse, crowd, cumulative, displayName } from '../lib/collapse'
   import { explain } from '../lib/prefs.svelte'
   import { ago } from '../lib/time'
   import { toasts } from '$shared/lib/toast.svelte'
@@ -13,7 +13,7 @@
   // Seeing the list is reading it. The rows keep their unread mark until the
   // next load, so you can still tell what is new on this visit.
   $effect(() => {
-    if (notifications.loaded && notifications.unread) notifications.markRead()
+    if (notifications.loaded && (notifications.unread || notifications.items.some((i) => !i.read))) notifications.markRead()
   })
 
   // Opening the list rereads it. The read is from our own database and free.
@@ -47,6 +47,19 @@
         {@const last = row.items[row.items.length - 1]}
         {@const earlier = row.items.length - 1}
         <li class:unread={row.unread}>
+          {#if cumulative(last)}
+            <svelte:element this={last.post_id ? 'a' : 'div'} class="activity" href={last.post_id ? `#/p/${last.post_id}` : undefined}>
+              <span class="glyph" class:heart-glyph={last.type === 'likes'}><Icon name={last.type === 'likes' ? 'favorite_fill' : 'person_add'} size={20} /></span>
+              <div class="main">
+                <p class="head">
+                  <strong>{crowd(last)}</strong>
+                  <span>{VERB[last.type]}</span>
+                  <time>{ago(last.created_at)}</time>
+                </p>
+                {#if last.target_text}<p class="context" dir="auto">{last.target_text}</p>{/if}
+              </div>
+            </svelte:element>
+          {:else}
           <a class="post" href={`#/n/${encodeURIComponent(last.id)}`}>
             <Avatar src={last.avatar} name={displayName(last)} />
             <div class="main">
@@ -72,6 +85,7 @@
               <Icon name={last.liked ? 'favorite_fill' : 'favorite'} size={18} />
             </button>
           </div>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -88,6 +102,11 @@
   li.unread::before { content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; width: 3px; background: var(--mark); }
 
   .post { display: flex; gap: 12px; padding: 14px 18px 0; color: inherit; text-decoration: none; }
+  .activity { display: flex; gap: 12px; padding: 12px 18px; color: inherit; text-decoration: none; }
+  a.activity:hover, a.activity:active { background: var(--bg-hover); }
+  .glyph { width: 40px; height: 24px; flex: none; display: grid; place-items: center; color: var(--text-secondary); }
+  .glyph.heart-glyph { color: var(--heart); }
+  .activity .context { -webkit-line-clamp: 1; line-clamp: 1; }
   .post { transition: background 0.15s; }
   .post:hover { background: var(--bg-hover); }
   .post:active { background: var(--bg-hover); }
