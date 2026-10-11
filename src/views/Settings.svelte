@@ -14,7 +14,7 @@
   interface Usage {
     month: string; total: number; rows: Array<{ kind: string; n: number }>
     credits: { total: number; free: number; prepaid: number; expires?: string } | null
-    spent: number; since: string | null
+    spent: number; since: string | null; spentMonth: number; low: number
   }
 
   let push = $state<PushState | null>(null)
@@ -74,8 +74,8 @@
   const KIND: Record<string, string> = {
     post_create: 'Posts', post_create_url: 'Posts with a link', post_read: 'Posts looked up', user_read: 'People looked up',
     owned_read: 'Your posts and mentions read', media_metadata: 'Image descriptions', event_post: 'Replies, mentions, quotes delivered',
-    event_like: 'Likes delivered', event_follow: 'Follows delivered', event_dm: 'Messages delivered', like: 'Likes', unlike: 'Unlikes',
-    dm_read: 'Messages read from X', dm_send: 'Messages sent',
+    event_like: 'Your likes on X', event_follow: 'Follows delivered', event_dm: 'Messages delivered', like: 'Likes', unlike: 'Unlikes',
+    dm_read: 'Messages read from X', dm_send: 'Messages sent', like_read: 'Your likes read from X',
   }
   const money = (n: number) => '$' + n.toFixed(2)
   const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
@@ -132,11 +132,15 @@
   <section>
     <h2>What this has cost</h2>
     {#if usage}
+      {#if usage.since}
+        <p class="total">{money(usage.spent)} <span class="quiet">spent since {date(usage.since)}</span></p>
+        {#if usage.spentMonth !== usage.spent}<p class="quiet">{money(usage.spentMonth)} of it this month.</p>{/if}
+      {/if}
       {#if usage.credits}
-        <p class="total">{money(usage.credits.total)} <span class="quiet">left on X</span></p>
+        <p class="balance" class:low={usage.credits.total < usage.low}>{money(usage.credits.total)} left on X</p>
         <p class="quiet">
-          {#if usage.since}{money(usage.spent)} spent since {date(usage.since)}, read off the balance X reports.{/if}
           {#if usage.credits.free && usage.credits.expires}{money(usage.credits.free)} of it is free credit that expires on {date(usage.credits.expires)}.{/if}
+          You get a notification if it drops below {money(usage.low)}.
         </p>
       {:else}
         <p class="quiet">X did not report the balance just now.</p>
@@ -172,4 +176,6 @@
   .checks li.why { color: var(--danger); font-size: 0.78rem; padding-top: 0; overflow-wrap: anywhere; }
   .total { font-family: var(--font-write); font-size: 1.6rem; font-variant-numeric: tabular-nums; }
   .total .quiet { font-family: var(--font-body); }
+  .balance { font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+  .balance.low { color: var(--danger); }
 </style>

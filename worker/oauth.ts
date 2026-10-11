@@ -6,9 +6,9 @@ import { problemDetail } from './x'
 // client. offline.access is what gets us a refresh token, which the webhook
 // and push need long after the browser tab is gone.
 
-// like.write for the heart; dm.read and dm.write for messages. Adding a scope
+// like.write for the heart, like.read to see the hearts given on X; dm.read and dm.write for messages. Adding a scope
 // means signing in again: X only grants what was asked for at sign in.
-export const SCOPES = 'tweet.read tweet.write users.read media.write offline.access like.write dm.read dm.write'
+export const SCOPES = 'tweet.read tweet.write users.read media.write offline.access like.read like.write dm.read dm.write'
 
 export interface TokenSet { access_token: string; refresh_token: string; expires_in: number }
 

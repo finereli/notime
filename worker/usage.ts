@@ -16,6 +16,7 @@ export const PRICES: Record<string, number> = {
   event_dm: 0.01,
   like: 0.015,
   unlike: 0.01,
+  like_read: 0.001,
   dm_read: 0.01,
   dm_send: 0.015,
 }

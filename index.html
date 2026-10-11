@@ -3,12 +3,22 @@
 <html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
-    <!-- viewport-fit=cover for the safe areas; no user scaling because this is
-         an app, not a page (a deliberate choice - see reference/shell.md). -->
+    <!-- No user scaling because this is an app, not a page (a deliberate
+         choice - see reference/shell.md). viewport-fit=cover only on iOS,
+         where the safe-area insets are reported: Chrome on Android takes it as
+         a request to draw behind the system button bar, and on some phones
+         (Samsung OneUI) reports a zero inset, so the bottom of every screen
+         hid behind the bar. -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content"
     />
+    <script>
+      if (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+        var vp = document.querySelector('meta[name="viewport"]')
+        vp.setAttribute('content', vp.getAttribute('content') + ', viewport-fit=cover')
+      }
+    </script>
     <title>notime</title>
     <meta name="description" content="Post to X and answer your notifications. No timeline." />
 

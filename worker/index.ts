@@ -4,9 +4,9 @@ import { bearer, createSession, deleteSession, validateSession } from './session
 import { NeedsLogin, RefreshRejected, SCOPES, beginLogin, d1TokenStore, exchangeCode, freshToken, refreshGrant, takeVerifier, type TokenSet } from './oauth'
 import { XError, fakeX, realX, type PostBody, type X, type XUser } from './x'
 import { crcResponse, verifySignature } from './webhook'
-import { backfill, badge, chainOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
+import { backfill, badge, checkBalance, syncLikes, chainOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { fanOut } from './push'
-import { repair, status } from './setup'
+import { SETUP_VERSION, repair, status } from './setup'
 import { monthToDate } from './usage'
 
 interface Account { x_user_id: string; username: string; name: string | null; avatar: string | null; needs_login: number }
@@ -115,6 +115,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
       (async () => {
         await repair(env, x, tokens.access_token, origin, me.id).catch((e) => console.error('repair failed', e))
         await backfill(env, x, tokens.access_token, me.id).catch((e) => console.error('backfill failed', e))
+        await syncLikes(env, x, tokens.access_token, me.id).catch((e) => console.error('likes failed', e))
+        await setSetting(db, 'setup_version', SETUP_VERSION)
       })(),
     )
     return Response.redirect(`${origin}/#/signin/${await createSession(db)}`, 302)
@@ -149,6 +151,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   async function missingScopes(): Promise<string[]> {
     const granted = new Set(((await getSetting(db, 'granted_scopes')) ?? '').split(/\s+/))
     return SCOPES.split(' ').filter((s) => !granted.has(s))
+  }
+
+  // A deploy that changes what the app subscribes to fixes the subscriptions
+  // itself, on the next visit, instead of waiting for a sign in or Repair.
+  if (pathname === '/api/me' && (await getSetting(db, 'setup_version')) !== SETUP_VERSION) {
+    await setSetting(db, 'setup_version', SETUP_VERSION)
+    ctx.waitUntil(token().then((t) => repair(env, x, t, origin, acct.x_user_id)).catch((e) => console.error('repair failed', e)))
   }
 
   if (pathname === '/api/me') {
@@ -236,6 +245,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     // Remember what we just said, so the list of past posts costs nothing to keep current.
     await savePosts(db, [{ id: post.id, text: body.text ?? '', author_id: acct.x_user_id, created_at: new Date().toISOString(), reply_to: b.reply_to ?? '' }])
     if (b.notification_id) await db.prepare(`UPDATE notifications SET replied_post_id = ?1 WHERE id = ?2`).bind(post.id, b.notification_id).run()
+    ctx.waitUntil(token().then((t) => checkBalance(env, x, t, 3600_000)).catch(() => {}))
     return json({ id: post.id, url: `https://x.com/${acct.username}/status/${post.id}` })
   }
 

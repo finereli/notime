@@ -55,6 +55,8 @@ export interface X {
   createSubscription(token: string, body: Record<string, unknown>): Promise<void>
   deleteSubscription(token: string, id: string): Promise<void>
   like(token: string, userId: string, postId: string): Promise<void>
+  // The ids of the owner's most recent likes.
+  likedPosts(token: string, userId: string): Promise<string[]>
   unlike(token: string, userId: string, postId: string): Promise<void>
   // Recent direct messages, all conversations or one person's.
   dms(token: string, ownerId: string, opts: { partnerId?: string; next?: string; max?: number }): Promise<DmPage>
@@ -198,6 +200,12 @@ export function realX(env: Env): X {
       await call('DELETE', `/2/users/${userId}/likes/${postId}`, token)
       await bump(db, 'unlike')
     },
+    async likedPosts(token, userId) {
+      const r = await call('GET', `/2/users/${userId}/liked_tweets?max_results=100`, token)
+      const ids = (r?.data ?? []).map((p: any) => String(p.id))
+      await bump(db, 'like_read', ids.length)
+      return ids
+    },
     async dms(token, ownerId, { partnerId, next, max = 50 }) {
       const q = new URLSearchParams({ ...DM_QUERY, max_results: String(max) })
       if (next) q.set('pagination_token', next)
@@ -281,6 +289,7 @@ export function fakeX(env: Env): X {
       if (postId === '0') throw new XError(403, 'You are not permitted to like this post.')
     },
     async unlike() {},
+    async likedPosts() { return [] },
     async dms(_t, ownerId, { partnerId, next }) {
       if (next) return { dms: [], users: [] }
       const now = Date.now()

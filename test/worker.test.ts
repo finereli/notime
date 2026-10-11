@@ -6,6 +6,7 @@ import { b64uDecode, b64uEncode, concat, utf8, type Bytes } from '../worker/byte
 import { mentionNotification, parseDm, parseEvent, pushText, replyTo } from '../worker/events'
 import { NeedsLogin, RefreshRejected, freshToken, type TokenRow, type TokenSet, type TokenStore } from '../worker/oauth'
 import { cost, hasUrl } from '../worker/usage'
+import { spentFrom } from '../worker/store'
 
 const subtle = webcrypto.subtle as unknown as SubtleCrypto
 const OWNER = '1000'
@@ -119,6 +120,13 @@ describe('events', () => {
     expect(replyTo({ id: '5' })).toBeUndefined()
   })
 
+  it('reads the owner\'s own like, and nobody else\'s', () => {
+    const mine = parseEvent(env('like.create', { id: 'l2', liking_user_id: OWNER, liked_tweet_id: '51', liked_tweet_author_id: '2001' }), OWNER)
+    expect(mine.liked).toBe('51')
+    expect(mine.billed).toBe('event_like')
+    expect(parseEvent(env('like.create', { id: 'l3', liking_user_id: '2001', liked_tweet_id: '40', liked_tweet_author_id: OWNER }), OWNER).liked).toBeNull()
+  })
+
   it('drops likes: nothing to do about a like', () => {
     const like = { id: 'l1', created_at: '2026-10-11T09:30:00.000Z', liking_user_id: '2001', liked_tweet_id: '40', liked_tweet_author_id: OWNER }
     const p = parseEvent(env('like.create', like, { users: [author], tweets: [{ id: '40', text: 'my post', author_id: OWNER }] }), OWNER)
@@ -229,6 +237,10 @@ describe('usage', () => {
   it('knows a link when it sees one', () => {
     for (const t of ['see https://example.com/a', 'www.example.org', 'read finereli.com today', 'go to scribe.finereli.com/download']) expect(hasUrl(t)).toBe(true)
     for (const t of ['no links here.', 'version 1.2 is out', 'e.g. this', 'end.Start']) expect(hasUrl(t)).toBe(false)
+  })
+  it('reads spend off balance readings and does not count a top-up', () => {
+    expect(spentFrom([{ total: 20 }, { total: 19.81 }, { total: 18.5 }, { total: 68.5 }, { total: 67 }])).toBeCloseTo(3)
+    expect(spentFrom([{ total: 5 }])).toBe(0)
   })
   it('prices a month', () => {
     expect(cost([{ kind: 'post_create', n: 10 }, { kind: 'post_create_url', n: 1 }, { kind: 'owned_read', n: 100 }])).toBeCloseTo(0.45)

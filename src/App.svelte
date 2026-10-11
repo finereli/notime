@@ -163,7 +163,7 @@
 
     <main class="body">
       {#if prefs.missingScopes.length && (view === 'notifications' || view === 'detail')}
-        <p class="grant">notime can now like replies and read your messages. <button onclick={() => auth.signIn()}>Sign in again</button> to allow it.</p>
+        <p class="grant">notime can now see your likes on X and read your messages. <button onclick={() => auth.signIn()}>Sign in again</button> to allow it.</p>
       {/if}
       {#if view === 'notifications'}
         <Notifications />

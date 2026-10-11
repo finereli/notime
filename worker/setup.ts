@@ -6,15 +6,27 @@ import { getSetting, setSetting } from './store'
 // Activity subscription per kind of event. Repair is safe to run any number
 // of times. It only creates what is missing.
 
-// Only what asks something of the owner. Likes, reposts and follows are
-// deliberately absent: nothing to do about them, and each one costs.
+// Only what asks something of the owner. Likes on the owner's posts,
+// reposts and follows are deliberately absent: nothing to do about them, and
+// each one costs. The owner's own likes are here, outbound only, because a
+// heart given on X marks a reply as dealt with.
 export const EVENTS: Array<{ type: string; label: string; filter?: Record<string, string> }> = [
   { type: 'post.reply.create', label: 'Replies' },
   { type: 'post.mention.create', label: 'Mentions' },
   { type: 'post.quote.create', label: 'Quotes' },
   { type: 'dm.received', label: 'Messages received' },
   { type: 'dm.sent', label: 'Messages you send elsewhere' },
+  { type: 'like.create', label: 'Your likes on X', filter: { direction: 'outbound' } },
 ]
+
+// A subscription matches an event when the type and the direction agree. An
+// old like subscription without a direction would deliver every like on
+// every post, so it does not count.
+const matches = (s: Subscription, e: (typeof EVENTS)[number]) =>
+  s.event_type === e.type && ((s.filter as any)?.direction ?? null) === (e.filter?.direction ?? null)
+
+// Changes whenever EVENTS does, so a deploy that changes it repairs itself.
+export const SETUP_VERSION = JSON.stringify(EVENTS.map((e) => [e.type, e.filter]))
 
 export const webhookUrl = (origin: string) => origin + '/api/webhook/x'
 
@@ -51,7 +63,7 @@ export async function status(env: Env, x: X, token: string, origin: string) {
     events: EVENTS.map((e) => ({
       type: e.type,
       label: e.label,
-      present: subs.some((s) => s.event_type === e.type),
+      present: subs.some((s) => matches(s, e)),
       error: errors[e.type],
     })),
     lastEventAt: await getSetting(env.DB, 'last_event_at'),
@@ -75,7 +87,7 @@ export async function repair(env: Env, x: X, token: string, origin: string, owne
     const { subs } = await listSubs(env, x, token)
     // Drop subscriptions of ours that the app no longer wants (likes, reposts, follows).
     for (const s of subs) {
-      if (EVENTS.some((e) => e.type === s.event_type) || (s.webhook_id && s.webhook_id !== webhookId)) continue
+      if (EVENTS.some((e) => matches(s, e)) || (s.webhook_id && s.webhook_id !== webhookId)) continue
       try {
         await x.deleteSubscription(token, s.id)
       } catch {
@@ -83,7 +95,7 @@ export async function repair(env: Env, x: X, token: string, origin: string, owne
       }
     }
     for (const ev of EVENTS) {
-      if (subs.some((s) => s.event_type === ev.type)) continue
+      if (subs.some((s) => matches(s, ev))) continue
       const body = { event_type: ev.type, filter: { user_id: ownerId, ...ev.filter }, tag: 'notime', webhook_id: webhookId }
       try {
         // Private events want the owner's token. The app token is the fallback

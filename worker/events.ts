@@ -28,6 +28,8 @@ export interface Dm {
 export interface Parsed {
   notification: Notification | null
   dm: Dm | null
+  // A post the owner liked, on X or anywhere.
+  liked: string | null
   users: XUser[]
   posts: XPost[]
   billed: string | null
@@ -89,7 +91,7 @@ const POST_EVENTS: Record<string, NotificationType> = {
   'post.quote.create': 'quote',
 }
 
-const STRAYS: Record<string, string> = { 'like.create': 'event_like', 'post.repost.create': 'event_post', 'follow.follow': 'event_follow' }
+const STRAYS: Record<string, string> = { 'post.repost.create': 'event_post', 'follow.follow': 'event_follow' }
 
 // A direct message, in either of the shapes X uses: the v2 dm_event, or the
 // older message_create that the Activity API still delivers.
@@ -119,7 +121,7 @@ export function parseDm(ev: any, ownerId: string): Dm | null {
 // Never throws: X warns that fields come and go, and one odd payload must not
 // fail the delivery.
 export function parseEvent(event: any, ownerId: string): Parsed {
-  const out: Parsed = { notification: null, dm: null, users: [], posts: [], billed: null }
+  const out: Parsed = { notification: null, dm: null, liked: null, users: [], posts: [], billed: null }
   try {
     const type: string = event?.event_type ?? ''
     const payload = event?.payload ?? {}
@@ -131,6 +133,11 @@ export function parseEvent(event: any, ownerId: string): Parsed {
       out.notification = postNotification(POST_EVENTS[type], payload, ownerId)
       // The post itself is worth keeping too: a later reply may answer it.
       out.posts.push(...cleanPosts([payload]))
+    } else if (type === 'like.create') {
+      out.billed = 'event_like'
+      // Only the owner's own likes count. Likes on the owner's posts ask
+      // nothing and are not subscribed to; a stray one is ignored.
+      if (String(payload?.liking_user_id ?? '') === ownerId && payload?.liked_tweet_id) out.liked = String(payload.liked_tweet_id)
     } else if (STRAYS[type]) {
       // No longer subscribed to, so nothing to show; this only accounts for
       // a delivery that was already on its way.

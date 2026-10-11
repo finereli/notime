@@ -131,6 +131,10 @@ export async function ingestEvent(env: Env, x: X, getToken: () => Promise<string
   await setSetting(db, 'last_event_at', new Date().toISOString())
   await saveUsers(db, parsed.users)
   await savePosts(db, parsed.posts)
+  if (parsed.liked) {
+    await db.prepare(`UPDATE notifications SET liked = 1, read = 1 WHERE post_id = ?1`).bind(parsed.liked).run()
+    return
+  }
   if (parsed.dm) {
     if ((await saveDm(db, parsed.dm, ownerId)) && parsed.dm.sender_id !== ownerId) await pushDm(env, parsed.dm)
     return
@@ -138,6 +142,9 @@ export async function ingestEvent(env: Env, x: X, getToken: () => Promise<string
   const n = parsed.notification
   if (!n) return
   if (!(await insertNotification(db, n, event))) return
+  // Every delivery costs, so this is where the balance moves. Glance at it
+  // at most once an hour.
+  await checkBalance(env, x, await getToken(), 3600_000).catch(() => {})
   try {
     await hydrate(env, x, await getToken(), n)
   } catch {}
@@ -154,6 +161,16 @@ export async function pushFor(env: Env, id: string): Promise<void> {
   const who = row.name || (row.username ? '@' + row.username : 'Someone')
   const { title, body } = pushText(row.type, who, row.text)
   await fanOut(env.DB, { title, body, tag: id, url: `/#/n/${encodeURIComponent(id)}`, unread: await badge(env.DB) }, env)
+}
+
+// Hearts given on X before the like events were flowing. A tenth of a cent
+// per like read, so only once, at sign in.
+export async function syncLikes(env: Env, x: X, token: string, ownerId: string): Promise<number> {
+  const ids = await x.likedPosts(token, ownerId)
+  if (!ids.length) return 0
+  const marks = ids.map((id) => env.DB.prepare(`UPDATE notifications SET liked = 1 WHERE post_id = ?1 AND liked = 0`).bind(id))
+  const results = await env.DB.batch(marks)
+  return results.reduce((n, r) => n + (r.meta.changes ?? 0), 0)
 }
 
 // --- direct messages ---------------------------------------------------------
@@ -217,24 +234,56 @@ export async function syncDms(env: Env, x: X, token: string, ownerId: string, pa
 
 // Spend is read off the balance: every drop between two readings is money
 // spent; a rise is a top-up and is not counted.
+export function spentFrom(readings: Array<{ total: number }>): number {
+  let spent = 0
+  for (let i = 1; i < readings.length; i++) spent += Math.max(0, readings[i - 1].total - readings[i].total)
+  return spent
+}
+
+// Below this, the owner hears about it once, until the balance is topped up.
+export const LOW_BALANCE = 2
+
+// Read the balance from X (free), keep the day's reading, and warn once when
+// it runs low. `every` throttles the calls made from busy paths.
+export async function checkBalance(env: Env, x: X, token: string, every = 0) {
+  const db = env.DB
+  if (every) {
+    const last = await getSetting(db, 'balance_checked_at')
+    if (last && Date.now() - Date.parse(last) < every) return null
+  }
+  await setSetting(db, 'balance_checked_at', new Date().toISOString())
+  const credits = await x.credits(token).catch(() => null)
+  if (!credits) return null
+  const day = new Date().toISOString().slice(0, 10)
+  await db
+    .prepare(`INSERT INTO balance (day, total) VALUES (?1, ?2) ON CONFLICT(day) DO UPDATE SET total = ?2, at = datetime('now')`)
+    .bind(day, credits.total)
+    .run()
+  const warned = (await getSetting(db, 'low_balance_warned')) === '1'
+  if (credits.total < LOW_BALANCE && !warned) {
+    await setSetting(db, 'low_balance_warned', '1')
+    await fanOut(db, { title: 'X credit is running low', body: `$${credits.total.toFixed(2)} left. Top up in the X developer console, or posting and replies will stop.`, tag: 'balance', url: '/#/settings', unread: await badge(db) }, env)
+  } else if (credits.total >= LOW_BALANCE && warned) {
+    await setSetting(db, 'low_balance_warned', '0')
+  }
+  return credits
+}
+
 export async function realSpend(env: Env, x: X, token: string) {
   const db = env.DB
-  const credits = await x.credits(token).catch(() => null)
-  if (credits) {
-    const day = new Date().toISOString().slice(0, 10)
-    await db
-      .prepare(`INSERT INTO balance (day, total) VALUES (?1, ?2) ON CONFLICT(day) DO UPDATE SET total = ?2, at = datetime('now')`)
-      .bind(day, credits.total)
-      .run()
-  }
+  const credits = await checkBalance(env, x, token)
+  const { results } = await db.prepare(`SELECT day, total FROM balance ORDER BY day`).all<{ day: string; total: number }>()
   const month = new Date().toISOString().slice(0, 7)
-  const { results } = await db
-    .prepare(`SELECT day, total FROM balance WHERE day >= (SELECT COALESCE(MAX(day), '0') FROM balance WHERE day < ?1) ORDER BY day`)
-    .bind(month + '-01')
-    .all<{ day: string; total: number }>()
-  let spent = 0
-  for (let i = 1; i < results.length; i++) spent += Math.max(0, results[i - 1].total - results[i].total)
-  return { credits, spent, since: results[0]?.day ?? null }
+  // The month starts from the last reading before it, if there is one.
+  let start = 0
+  results.forEach((r, i) => { if (r.day < month + '-01') start = i })
+  return {
+    credits,
+    spent: spentFrom(results),
+    since: results[0]?.day ?? null,
+    spentMonth: spentFrom(results.slice(start)),
+    low: LOW_BALANCE,
+  }
 }
 
 // The safety net under the webhook: read the owner's mentions since the last
