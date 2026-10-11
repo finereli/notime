@@ -21,7 +21,8 @@
 <style>
   .login { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: var(--accent-deep); padding: 24px; }
   .card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; max-width: 320px; width: 100%; color: #fff; }
-  img { border-radius: 18px; margin-bottom: 10px; }
+  /* The icon is the same pine as this screen. A faint edge keeps it a tile. */
+  img { border-radius: 18px; margin-bottom: 10px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16); }
   h1 { font-family: var(--font-write); font-size: 2.2rem; font-weight: 400; color: #fff; }
   p { font-size: 1rem; line-height: 1.5; color: #b9d6ce; margin-bottom: 22px; }
   button {
