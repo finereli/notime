@@ -4,6 +4,7 @@
   import Icon from '../components/Icon.svelte'
   import { apiJson } from '../lib/api'
   import { drafts } from '../lib/drafts.svelte'
+  import { replyId } from '../lib/drafts-core'
   import { notifications } from '../lib/notifications.svelte'
   import { displayName, type Item } from '../lib/collapse'
   import { ago } from '../lib/time'
@@ -23,13 +24,17 @@
       .catch(() => { if (!item) missing = true })
   })
 
-  const draft = $derived(drafts.reply(id))
+  // Made here, not inside a derived: creating a draft writes state. The
+  // parent keys this component on the id, so reading it once is right.
+  // svelte-ignore state_referenced_locally
+  drafts.reply(id)
+  const draft = $derived(drafts.state.drafts[replyId(id)])
 
   function done(result: Sent) {
-    drafts.remove(draft.id)
+    sent = result
     notifications.markReplied(id, result.ids[0])
     if (item) item.replied_post_id = result.ids[0]
-    sent = result
+    drafts.remove(replyId(id))
   }
 </script>
 
@@ -56,7 +61,7 @@
 
     {#if sent}
       <p class="replied"><Icon name="check_circle" size={20} /> Replied. <a href={sent.url} target="_blank" rel="noopener">Open on X</a></p>
-    {:else}
+    {:else if draft}
       {#if item.replied_post_id}
         <p class="quiet again">You already replied to this. You can reply again.</p>
       {/if}

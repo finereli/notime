@@ -86,6 +86,9 @@
   }
   :global([dir='rtl']) .drawer { transform: translateX(100%); }
   .drawer.open, :global([dir='rtl']) .drawer.open { transform: translateX(0); }
+  /* Closed, the drawer sits just off the edge and its shadow would still
+     fall across the page as a grey strip. */
+  .drawer:not(.open) { box-shadow: none; }
 
   @media (min-width: 768px) {
     .scrim { display: none; }

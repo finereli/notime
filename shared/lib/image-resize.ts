@@ -26,7 +26,12 @@ export async function resizeImage(file: File): Promise<ResizedImage> {
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+  const ctx = canvas.getContext('2d')!
+  // JPEG has no transparency. Without a ground, a see-through PNG comes out
+  // with black where it was clear.
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, width, height)
+  ctx.drawImage(img, 0, 0, width, height)
 
   let quality = JPEG_QUALITY
   let blob = await canvasToBlob(canvas, 'image/jpeg', quality)
