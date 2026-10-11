@@ -4,6 +4,9 @@ import { mount } from 'svelte'
 import App from './App.svelte'
 import { updates } from '$shared/lib/updates.svelte'
 import { sending } from './lib/send.svelte'
+import { fitToScreen } from './lib/fit'
+
+fitToScreen()
 
 // A new version never reloads a live session, and never while a post is on
 // its way to X: a reload between the second and third post of a thread would

@@ -51,7 +51,12 @@ input, textarea, select { font: inherit; color: inherit; }
 .dark ::-webkit-scrollbar-thumb { background: #45475a; border-radius: 4px; }
 
 /* One measure for every screen: wide enough to read, narrow enough to write. */
-.page { max-width: 38rem; margin: 0 auto; padding: 18px 18px calc(var(--safe-bottom) + 28px); }
+/* Measured by src/lib/fit.ts; dvh until the first measurement. */
+html, body, #app { height: var(--app-h, 100dvh); }
+
+/* The end of every list gets a runway at least as tall as a phone's button
+   bar, so a height that is briefly wrong can never hide the last row. */
+.page { max-width: 38rem; margin: 0 auto; padding: 18px 18px calc(max(var(--safe-bottom), 48px) + 28px); }
 
 .quiet { color: var(--text-secondary); font-size: 0.85rem; line-height: 1.45; }
 
