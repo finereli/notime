@@ -52,8 +52,7 @@
               <span class="glyph" class:heart-glyph={last.type === 'likes'}><Icon name={last.type === 'likes' ? 'favorite_fill' : 'person_add'} size={20} /></span>
               <div class="main">
                 <p class="head">
-                  <strong>{crowd(last)}</strong>
-                  <span>{VERB[last.type]}</span>
+                  <span class="who"><strong>{displayName(last)}</strong>{crowd(last)} {VERB[last.type]}</span>
                   <time>{ago(last.created_at)}</time>
                 </p>
                 {#if last.target_text}<p class="context" dir="auto">{last.target_text}</p>{/if}
@@ -107,6 +106,9 @@
   .glyph { width: 40px; height: 24px; flex: none; display: grid; place-items: center; color: var(--text-secondary); }
   .glyph.heart-glyph { color: var(--heart); }
   .activity .context { -webkit-line-clamp: 1; line-clamp: 1; }
+  /* The whole sentence wraps; nothing in it is cut. */
+  .head .who { flex: 1; min-width: 0; line-height: 1.4; }
+  .head .who strong { overflow: visible; white-space: normal; }
   .post { transition: background 0.15s; }
   .post:hover { background: var(--bg-hover); }
   .post:active { background: var(--bg-hover); }

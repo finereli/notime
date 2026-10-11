@@ -51,21 +51,17 @@ assert.equal(await page.getByLabel('Post 2').inputValue(), 'More at finereli.com
 await page.locator('.images img').waitFor()
 await page.getByRole('button', { name: 'Described' }).waitFor()
 
-// --- park it, write another, find the first in Drafts ---
+// --- a refused post keeps its text; the thread waits underneath it ---
 await page.getByRole('button', { name: 'Menu', exact: true }).click()
-await page.getByRole('button', { name: /^Drafts/ }).click()
-await page.getByRole('button', { name: 'New post' }).click()
-await page.getByLabel('Post text').fill('A failure on purpose #fail')
-await page.getByRole('button', { name: 'Post', exact: true }).click()
+assert.equal(await page.getByRole('button', { name: /^Drafts/ }).count(), 0, 'no Drafts screen')
+await page.getByRole('button', { name: 'Close menu' }).click({ position: { x: 370, y: 400 } })
+await page.getByLabel('Post 1').fill('A failure on purpose #fail')
+await page.getByRole('button', { name: 'Post all' }).click()
 await page.locator('.error').waitFor()
 assert.match(await page.locator('.error').innerText(), /not permitted/)
-assert.equal(await page.getByLabel('Post text').inputValue(), 'A failure on purpose #fail', 'a refused post keeps its text')
+assert.equal(await page.getByLabel('Post 1').inputValue(), 'A failure on purpose #fail', 'a refused post keeps its text')
 await shot('03-post-refused')
-await page.getByLabel('Post text').fill('')
-await page.goto(BASE + '/#/drafts')
-await page.getByText('Most software gets worse').waitFor()
-await shot('04-drafts')
-await page.getByText('Most software gets worse').click()
+await page.getByLabel('Post 1').fill('Most software gets worse as it grows. The interesting question is what you refuse to add.')
 
 // --- post the thread ---
 await page.getByRole('button', { name: 'Post all' }).click()
@@ -251,7 +247,7 @@ await shot('13-compose-dark')
 await page.getByLabel('Post text').fill('')
 
 // --- no horizontal overflow anywhere we have been ---
-for (const hash of ['#/', '#/notifications', '#/drafts', '#/settings', '#/messages', '#/m/2001', '#/posts']) {
+for (const hash of ['#/', '#/notifications', '#/settings', '#/messages', '#/m/2001', '#/posts']) {
   await page.goto(BASE + '/' + hash)
   await page.waitForTimeout(150)
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll on ' + hash)

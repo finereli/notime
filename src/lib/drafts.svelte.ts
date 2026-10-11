@@ -23,7 +23,6 @@ class Drafts {
   }
 
   get current(): Draft { return this.state.drafts[this.state.currentId] }
-  get parked(): Draft[] { return core.parked(this.state) }
 
   touch(draft: Draft) {
     draft.updatedAt = Date.now()
@@ -35,9 +34,6 @@ class Drafts {
     if (this.#timer) { clearTimeout(this.#timer); this.#timer = null }
     try { localStorage.setItem(KEY, JSON.stringify(this.state)) } catch {}
   }
-
-  startNew() { this.#set(core.startNew(this.state, mkId())) }
-  open(id: string) { this.#set(core.open(this.state, id)) }
 
   remove(id: string) {
     const images = this.state.drafts[id]?.posts.flatMap((p) => p.images) ?? []

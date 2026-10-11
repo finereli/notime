@@ -32,11 +32,6 @@
     {#key drafts.current.id}
       <Composer draft={drafts.current} onsent={done} />
     {/key}
-    {#if drafts.parked.length}
-      <p class="quiet parked">
-        <a href="#/drafts">{drafts.parked.length === 1 ? '1 draft' : `${drafts.parked.length} drafts`} waiting</a>
-      </p>
-    {/if}
   {/if}
 </div>
 
@@ -48,6 +43,4 @@
   .primary { min-height: 44px; padding: 0 22px; border-radius: 22px; background: var(--accent); color: #fff; font-weight: 500; }
   :global(.dark) .primary { color: #10201c; }
   .actions a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 0.9rem; text-decoration: none; }
-  .parked { margin-top: 22px; }
-  .parked a { display: inline-block; padding: 10px 0; }
 </style>

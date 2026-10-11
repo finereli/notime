@@ -12,9 +12,9 @@ account's API credit.
 
 - Posts: text, threads, up to four images each with a description, polls, and
   who can reply. Long posts are allowed if the account has Premium.
-- Drafts: everything you type is saved on the device as you type it, images
-  included, and stays until it is posted. Start a new post and the old one
-  waits under Drafts.
+- Saving: whatever you are writing is saved on the device as you type it,
+  images included, until it is sent. One post (or thread) at a time; each
+  reply box keeps its own.
 - Notifications: replies, mentions and quotes, each with a reply box and a
   heart. A back-and-forth with one person folds into one row that carries
   the whole conversation. Likes and follows are one cumulative line each

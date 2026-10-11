@@ -4,7 +4,6 @@ export type Route =
   | { view: 'write' }
   | { view: 'notifications' }
   | { view: 'detail'; id: string }
-  | { view: 'drafts' }
   | { view: 'posts' }
   | { view: 'post'; id: string; quote: boolean }
   | { view: 'settings' }
@@ -23,7 +22,6 @@ export const router = new Router<Route>({
     if (path === '/messages') return { view: 'messages' }
     if (path === '/posts') return { view: 'posts' }
     if (path === '/notifications') return { view: 'notifications' }
-    if (path === '/drafts') return { view: 'drafts' }
     if (path === '/settings') return { view: 'settings' }
     return { view: 'write' }
   },

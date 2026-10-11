@@ -31,13 +31,13 @@ export interface Item {
 
 export const cumulative = (i: Item) => i.type === 'likes' || i.type === 'follows'
 
-// "Ana Lima", "Ana Lima and Ben", "Ana Lima and 12 others".
+// Who besides the latest: "", " and Ben", " and 12 others". Kept apart from
+// the name so a long name can never squeeze the count out of view.
 export function crowd(i: Item): string {
-  const first = displayName(i)
   const n = i.count ?? 1
-  if (n <= 1) return first
-  if (n === 2 && i.second) return `${first} and ${i.second}`
-  return `${first} and ${n - 1} others`
+  if (n <= 1) return ''
+  if (n === 2 && i.second) return ` and ${i.second}`
+  return ` and ${n - 1} others`
 }
 
 // items runs oldest to newest; the last one is what the row shows.

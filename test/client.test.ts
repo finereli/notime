@@ -85,22 +85,18 @@ describe('drafts', () => {
     expect(back).toEqual(s)
   })
 
-  it('parks a draft with content when a new one starts, and drops a blank one', () => {
-    let s = write(d.initial('a'), 'half an idea')
-    s = d.startNew(s, 'b')
-    expect(s.currentId).toBe('b')
-    expect(d.parked(s).map((x) => x.id)).toEqual(['a'])
-    s = d.startNew(s, 'c')
-    expect(Object.keys(s.drafts).sort()).toEqual(['a', 'c'])
-  })
-
-  it('opens a parked draft and keeps the one it replaces only if it has content', () => {
-    let s = d.startNew(write(d.initial('a'), 'one'), 'b')
-    s = d.open(s, 'a')
-    expect(s.currentId).toBe('a')
-    expect(s.drafts.b).toBeUndefined()
-    s = d.open(d.startNew(s, 'c'), 'a')
-    expect(s.currentId).toBe('a')
+  it('keeps a single Write draft when storage holds several from before', () => {
+    const old = { currentId: 'b', drafts: { a: { ...d.newDraft('a'), updatedAt: 5 }, b: d.newDraft('b'), c: { ...d.newDraft('c'), updatedAt: 9 }, [d.replyId('post:1')]: d.newDraft(d.replyId('post:1'), 'post:1') } }
+    old.drafts.a.posts[0].text = 'older idea'
+    old.drafts.c.posts[0].text = 'newer idea'
+    old.drafts[d.replyId('post:1')].posts[0].text = 'thanks'
+    const s = d.load(JSON.stringify(old), mkId)
+    // The current one was blank, so the most recent one with words takes its place.
+    expect(s.currentId).toBe('c')
+    expect(Object.keys(s.drafts).sort()).toEqual(['c', d.replyId('post:1')].sort())
+    // A current draft with content wins over a newer one.
+    old.drafts.b.posts[0].text = 'what I was writing'
+    expect(d.load(JSON.stringify(old), mkId).currentId).toBe('b')
   })
 
   it('replaces a removed current draft with a blank one', () => {
@@ -110,15 +106,13 @@ describe('drafts', () => {
     expect(d.isEmpty(s.drafts.b)).toBe(true)
   })
 
-  it('keeps one reply draft per notification, listed among the drafts once it has text', () => {
-    let s = d.ensureReply(d.initial('a'), 'post:51')
+  it('keeps one reply draft per notification, never as the Write draft', () => {
+    const s = d.ensureReply(d.initial('a'), 'post:51')
     expect(d.ensureReply(s, 'post:51')).toBe(s)
-    expect(d.parked(s)).toEqual([])
     s.drafts[d.replyId('post:51')].posts[0].text = 'thanks'
-    expect(d.parked(s).map((x) => x.replyTo)).toEqual(['post:51'])
-    // A reply draft is never the main one, even if storage says so.
     const odd = d.load(JSON.stringify({ ...s, currentId: d.replyId('post:51') }), mkId)
     expect(odd.drafts[odd.currentId].replyTo).toBeUndefined()
+    expect(odd.drafts[d.replyId('post:51')].posts[0].text).toBe('thanks')
   })
 
   it('counts a draft with only an image or only a poll as not empty', () => {
@@ -126,7 +120,6 @@ describe('drafts', () => {
     const poll = d.newDraft('b'); poll.poll = { options: ['x', ''], minutes: 60 }
     const blankPoll = d.newDraft('c'); blankPoll.poll = { options: ['', ''], minutes: 60 }
     expect([d.isEmpty(img), d.isEmpty(poll), d.isEmpty(blankPoll)]).toEqual([false, false, true])
-    expect(d.preview(img)).toBe('Images, no text yet')
   })
 
   it('lists every image id still in use', () => {

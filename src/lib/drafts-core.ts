@@ -1,4 +1,5 @@
-// What a draft is and how the set of drafts changes. Pure functions over
+// What a draft is and how drafts change. There is one draft for the Write
+// screen, kept until it is sent, plus one per reply box. Pure functions over
 // plain data, so the rules can be tested without a browser.
 
 export interface DraftImage { id: string; alt: string; mediaId?: string; uploadedAt?: number }
@@ -49,27 +50,10 @@ export function load(raw: string | null, mkId: () => string): DraftState {
           updatedAt: Number(d.updatedAt) || 0,
         }
       }
-      if (drafts[s.currentId] && !drafts[s.currentId].replyTo) return { currentId: s.currentId, drafts }
-      const id = mkId()
-      return { currentId: id, drafts: { ...drafts, [id]: newDraft(id) } }
+      return single(s.currentId, drafts, mkId)
     }
   } catch {}
   return initial(mkId())
-}
-
-// "New post": the current draft, if it holds anything, stays in the list.
-export function startNew(state: DraftState, id: string): DraftState {
-  const drafts = { ...state.drafts }
-  if (isEmpty(drafts[state.currentId])) delete drafts[state.currentId]
-  drafts[id] = newDraft(id)
-  return { currentId: id, drafts }
-}
-
-export function open(state: DraftState, id: string): DraftState {
-  if (!state.drafts[id] || id === state.currentId) return state
-  const drafts = { ...state.drafts }
-  if (isEmpty(drafts[state.currentId])) delete drafts[state.currentId]
-  return { currentId: id, drafts }
 }
 
 // Removing the current draft leaves a blank one in its place.
@@ -81,32 +65,27 @@ export function remove(state: DraftState, id: string, freshId: string): DraftSta
   return { currentId: freshId, drafts }
 }
 
+// One Write draft. Storage from when there could be several keeps the one
+// being written, or if that is blank, the most recent one with anything in
+// it. Reply drafts are kept as they are.
+function single(currentId: string, drafts: Record<string, Draft>, mkId: () => string): DraftState {
+  const replies = Object.fromEntries(Object.entries(drafts).filter(([, d]) => d.replyTo))
+  const main = Object.values(drafts).filter((d) => !d.replyTo)
+  const current = drafts[currentId] && !drafts[currentId].replyTo ? drafts[currentId] : undefined
+  const keep = current && !isEmpty(current) ? current : main.filter((d) => !isEmpty(d)).sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? current
+  if (keep) return { currentId: keep.id, drafts: { ...replies, [keep.id]: keep } }
+  const id = mkId()
+  return { currentId: id, drafts: { ...replies, [id]: newDraft(id) } }
+}
+
 export function ensureReply(state: DraftState, notificationId: string): DraftState {
   const id = replyId(notificationId)
   if (state.drafts[id]) return state
   return { ...state, drafts: { ...state.drafts, [id]: newDraft(id, notificationId) } }
 }
 
-// The Drafts list: everything with content except the one being written.
-export function parked(state: DraftState): Draft[] {
-  return Object.values(state.drafts)
-    .filter((d) => d.id !== state.currentId && !isEmpty(d))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-}
-
 export function imageIds(state: DraftState): Set<string> {
   const ids = new Set<string>()
   for (const d of Object.values(state.drafts)) for (const p of d.posts) for (const i of p.images) ids.add(i.id)
   return ids
-}
-
-export function preview(d: Draft): string {
-  const text = d.posts.map((p) => p.text.trim()).find(Boolean)
-  if (text) return text
-  if (d.posts.some((p) => p.images.length)) return 'Images, no text yet'
-  return 'Poll, no text yet'
-}
-
-export function imageCount(d: Draft): number {
-  return d.posts.reduce((n, p) => n + p.images.length, 0)
 }

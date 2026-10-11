@@ -14,7 +14,6 @@
   import Write from './views/Write.svelte'
   import Notifications from './views/Notifications.svelte'
   import Detail from './views/Detail.svelte'
-  import Drafts from './views/Drafts.svelte'
   import Posts from './views/Posts.svelte'
   import Post from './views/Post.svelte'
   import Settings from './views/Settings.svelte'
@@ -22,7 +21,6 @@
   import Chat from './views/Chat.svelte'
   import { apiJson } from './lib/api'
   import { auth, type User } from './lib/auth.svelte'
-  import { drafts } from './lib/drafts.svelte'
   import { dms } from './lib/dms.svelte'
   import { notifications } from './lib/notifications.svelte'
   import { posts } from './lib/posts.svelte'
@@ -42,13 +40,12 @@
   const detailId = $derived(router.route.view === 'detail' ? router.route.id : '')
   const postRoute = $derived(router.route.view === 'post' ? router.route : null)
   const chatId = $derived(router.route.view === 'chat' ? router.route.id : '')
-  const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', drafts: 'Drafts', posts: 'Posts', post: 'Post', settings: 'Settings', messages: 'Messages', chat: 'Message' }[view])
+  const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', posts: 'Posts', post: 'Post', settings: 'Settings', messages: 'Messages', chat: 'Message' }[view])
   const entries = $derived([
     { label: 'Write', hash: '/', current: view === 'write' },
     { label: 'Notifications', hash: '/notifications', current: view === 'notifications' || view === 'detail', count: notifications.unread || undefined },
     { label: 'Messages', hash: '/messages', current: view === 'messages' || view === 'chat', count: dms.unread || undefined },
     { label: 'Posts', hash: '/posts', current: view === 'posts' || view === 'post' },
-    { label: 'Drafts', hash: '/drafts', current: view === 'drafts', count: drafts.parked.length || undefined },
     { label: 'Settings', hash: '/settings', current: view === 'settings' },
   ])
 
@@ -153,10 +150,6 @@
           <span class:turning={notifications.checking}><Icon name="refresh" /></span>
         {/snippet}
       </TopBar>
-    {:else if view === 'drafts'}
-      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="New post" ontrailing={() => { drafts.startNew(); router.go('/') }}>
-        {#snippet trailing()}<Icon name="edit_square" />{/snippet}
-      </TopBar>
     {:else}
       <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} />
     {/if}
@@ -169,8 +162,6 @@
         <Notifications />
       {:else if view === 'detail'}
         {#key detailId}<Detail id={detailId} />{/key}
-      {:else if view === 'drafts'}
-        <Drafts />
       {:else if view === 'posts'}
         <Posts />
       {:else if postRoute}
