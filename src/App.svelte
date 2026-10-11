@@ -89,7 +89,7 @@
 
   async function refreshPosts() {
     try {
-      if (!(await posts.refresh())) toasts.error('Nothing new', 2000)
+      await posts.refresh()
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : 'Could not check X')
     }
@@ -102,7 +102,7 @@
 
   async function checkDms() {
     try {
-      if (!(await dms.check())) toasts.error('Nothing new', 2000)
+      await dms.check()
     } catch (e) {
       toasts.error(explain(e, 'Could not check X'))
     }
@@ -110,8 +110,7 @@
 
   async function check() {
     try {
-      const added = await notifications.check()
-      if (!added) toasts.error('Nothing new', 2000)
+      await notifications.check()
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : 'Could not check X')
     }

@@ -51,8 +51,7 @@
   async function fromX() {
     fetching = true
     try {
-      const { added } = await apiJson<{ added: number }>(`/api/dms/${id}/sync`, { method: 'POST' })
-      if (!added) toasts.error('Nothing more on X', 2000)
+      await apiJson(`/api/dms/${id}/sync`, { method: 'POST' })
       await load()
     } catch (e) {
       toasts.error(explain(e, 'Could not ask X'))
