@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect id="tile" width="512" height="512" rx="112" fill="#1f4a41"/>
+  <g id="icon">
+    <path d="M132 108h248a52 52 0 0 1 52 52v148a52 52 0 0 1-52 52H262l-86 76v-76h-44a52 52 0 0 1-52-52V160a52 52 0 0 1 52-52z" fill="#f4f6f3"/>
+    <rect x="236" y="164" width="40" height="140" rx="20" fill="#1f4a41"/>
+  </g>
+</svg>
