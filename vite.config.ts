@@ -19,7 +19,7 @@ export default defineConfig({
     svelte(),
     VitePWA(
       pwaOptions({
-        includeAssets: ['icons/*.png'],
+        includeAssets: ['icons/*.png', 'icons/*.svg'],
         manifest: {
           name: 'notime',
           short_name: 'notime',
