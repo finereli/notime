@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "notime-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "553baba7-8144-4c9c-8caf-fe2d83448c44",
       "migrations_dir": "migrations"
     }
   ],
