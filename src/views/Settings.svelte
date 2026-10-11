@@ -2,9 +2,6 @@
   import { apiJson } from '../lib/api'
   import { disablePush, enablePush, pushState, testPush, type PushState } from '../lib/push'
   import { toasts } from '$shared/lib/toast.svelte'
-  import { prefs } from '../lib/prefs.svelte'
-
-  let { pushAll = $bindable(false) }: { pushAll?: boolean } = $props()
 
   interface Status {
     url: string
@@ -14,7 +11,11 @@
     events: Array<{ type: string; label: string; present: boolean; error?: string }>
     lastEventAt: string | null
   }
-  interface Usage { month: string; total: number; rows: Array<{ kind: string; n: number }> }
+  interface Usage {
+    month: string; total: number; rows: Array<{ kind: string; n: number }>
+    credits: { total: number; free: number; prepaid: number; expires?: string } | null
+    spent: number; since: string | null
+  }
 
   let push = $state<PushState | null>(null)
   let pushBusy = $state(false)
@@ -58,27 +59,6 @@
     }
   }
 
-  async function toggleAll() {
-    const prev = pushAll
-    pushAll = !pushAll
-    try {
-      await apiJson('/api/settings', { method: 'PUT', body: { pushAll } })
-    } catch {
-      pushAll = prev
-      toasts.error('The change was not saved')
-    }
-  }
-
-  async function toggleLong() {
-    const prev = [prefs.longPosts, prefs.longPostsFrom] as const
-    prefs.set(!prefs.longPosts, 'you')
-    try {
-      await apiJson('/api/settings', { method: 'PUT', body: { longPosts: prefs.longPosts } })
-    } catch {
-      prefs.set(...prev)
-      toasts.error('The change was not saved')
-    }
-  }
 
   async function repair() {
     repairing = true
@@ -93,9 +73,12 @@
 
   const KIND: Record<string, string> = {
     post_create: 'Posts', post_create_url: 'Posts with a link', post_read: 'Posts looked up', user_read: 'People looked up',
-    owned_read: 'Mentions checked', media_metadata: 'Image descriptions', event_post: 'Replies, mentions, quotes, reposts',
-    event_like: 'Likes', event_follow: 'Follows',
+    owned_read: 'Your posts and mentions read', media_metadata: 'Image descriptions', event_post: 'Replies, mentions, quotes delivered',
+    event_like: 'Likes delivered', event_follow: 'Follows delivered', event_dm: 'Messages delivered', like: 'Likes', unlike: 'Unlikes',
+    dm_read: 'Messages read from X', dm_send: 'Messages sent',
   }
+  const money = (n: number) => '$' + n.toFixed(2)
+  const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
   const healthy = $derived(!!status?.webhook?.valid && status.events.every((e) => e.present))
   const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 </script>
@@ -109,7 +92,7 @@
       <p class="quiet">This browser cannot receive push notifications.</p>
     {:else if push}
       <p class="quiet">
-        {push === 'on' ? 'This device gets a notification when someone replies to you, mentions you or quotes you.' : 'Get a notification here when someone replies to you, mentions you or quotes you.'}
+        {push === 'on' ? 'This device gets a notification when someone replies to you, mentions you, quotes you or sends you a message.' : 'Get a notification here when someone replies to you, mentions you, quotes you or sends you a message.'}
       </p>
       <div class="row">
         <button class="btn" onclick={togglePush} disabled={pushBusy || push === 'denied'}>{push === 'on' ? 'Turn off on this device' : 'Turn on notifications'}</button>
@@ -119,26 +102,6 @@
     {/if}
     {#if pushNote}<p class="quiet" role="status">{pushNote}</p>{/if}
 
-    <div class="row">
-      <button class="btn plain" onclick={toggleAll}>{pushAll ? 'Stop notifying me about reposts and follows' : 'Also notify me about reposts and follows'}</button>
-    </div>
-    <p class="quiet">{pushAll ? 'Every repost and follow reaches your phone.' : 'Reposts and follows stay in the list and never reach your phone. Likes are not tracked at all.'}</p>
-  </section>
-
-  <section>
-    <h2>Post length</h2>
-    <p class="quiet">
-      {#if prefs.longPosts}
-        Posts can run past 280 characters, up to 25,000.
-        {prefs.longPostsFrom === 'x' ? 'X says your account has Premium.' : 'X decides when you post: it refuses a long post from an account without Premium.'}
-      {:else}
-        Posts stop at 280 characters.
-        {prefs.longPostsFrom === 'x' ? 'X says your account does not have Premium.' : prefs.longPostsFrom === 'unknown' ? 'X would not say whether your account has Premium. If it does, turn this on.' : ''}
-      {/if}
-    </p>
-    <div class="row">
-      <button class="btn plain" onclick={toggleLong}>{prefs.longPosts ? 'Limit posts to 280 characters' : 'Allow long posts'}</button>
-    </div>
   </section>
 
   <section>
@@ -169,13 +132,21 @@
   <section>
     <h2>What this has cost</h2>
     {#if usage}
-      <p class="total">${usage.total.toFixed(2)} <span class="quiet">this month, roughly</span></p>
+      {#if usage.credits}
+        <p class="total">{money(usage.credits.total)} <span class="quiet">left on X</span></p>
+        <p class="quiet">
+          {#if usage.since}{money(usage.spent)} spent since {date(usage.since)}, read off the balance X reports.{/if}
+          {#if usage.credits.free && usage.credits.expires}{money(usage.credits.free)} of it is free credit that expires on {date(usage.credits.expires)}.{/if}
+        </p>
+      {:else}
+        <p class="quiet">X did not report the balance just now.</p>
+      {/if}
       {#if usage.rows.length}
+        <p class="quiet">Where it went this month, by count. X reports only the total, so the split is the app's own tally, about {money(usage.total)} at list prices.</p>
         <ul class="checks">
           {#each usage.rows as r}<li><span>{KIND[r.kind] ?? r.kind}</span><span>{r.n}</span></li>{/each}
         </ul>
       {/if}
-      <p class="quiet">An estimate from X's listed prices. A post costs about a cent and a half, a post with a link twenty cents. The X developer console has the real number.</p>
     {:else}
       <span class="spinner"></span>
     {/if}

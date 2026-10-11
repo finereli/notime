@@ -7,22 +7,37 @@
   import { replyId } from '../lib/drafts-core'
   import { notifications } from '../lib/notifications.svelte'
   import { displayName, type Item } from '../lib/collapse'
+  import { explain } from '../lib/prefs.svelte'
   import { ago } from '../lib/time'
   import type { Sent } from '../lib/send.svelte'
+  import { toasts } from '$shared/lib/toast.svelte'
 
   let { id }: { id: string } = $props()
 
   // Show what the list already knows at once, then ask the server, which
   // fills in the author or the original post if they were missing.
   let item = $state<Item | null>(notifications.items.find((i) => i.id === id) ?? null)
+  let chain = $state<Item[]>([])
   let missing = $state(false)
   let sent = $state<Sent | null>(null)
 
   $effect(() => {
-    apiJson<Item>(`/api/notifications/${encodeURIComponent(id)}`)
-      .then((full) => (item = full))
+    apiJson<Item & { chain: Item[] }>(`/api/notifications/${encodeURIComponent(id)}`)
+      .then(({ chain: before, ...full }) => { item = full; chain = before })
       .catch(() => { if (!item) missing = true })
   })
+
+  async function heart() {
+    if (!item) return
+    const on = !item.liked
+    item.liked = on
+    try {
+      await notifications.like(item.id, on)
+    } catch (e) {
+      item.liked = !on
+      toasts.error(explain(e, 'X did not take the like'))
+    }
+  }
 
   // Made here, not inside a derived: creating a draft writes state. The
   // parent keys this component on the id, so reading it once is right.
@@ -40,8 +55,19 @@
 
 <div class="page">
   {#if item}
+    <!-- The conversation so far, oldest first: what you wrote, what they said. -->
+    {#each chain as c (c.id)}
+      {#if c.target_text}<p class="yours" dir="auto"><span>You</span>{c.target_text}</p>{/if}
+      <div class="earlier">
+        <Avatar src={c.avatar} name={displayName(c)} size={28} />
+        <div>
+          <p class="who"><strong>{displayName(c)}</strong> <time>{ago(c.created_at)}</time></p>
+          <p dir="auto">{c.text}</p>
+        </div>
+      </div>
+    {/each}
     {#if item.target_text}
-      <p class="yours" dir="auto"><span>You wrote</span>{item.target_text}</p>
+      <p class="yours" dir="auto"><span>{chain.length ? 'You' : 'You wrote'}</span>{item.target_text}</p>
     {/if}
 
     <article>
@@ -54,15 +80,20 @@
         <time>{ago(item.created_at)}</time>
       </header>
       <p class="text" dir="auto">{item.text}</p>
-      {#if item.username && item.post_id}
-        <a class="out" href={`https://x.com/${item.username}/status/${item.post_id}`} target="_blank" rel="noopener">Open on X <Icon name="open_in_new" size={14} /></a>
-      {/if}
+      <div class="actions">
+        {#if item.username && item.post_id}
+          <a class="out" href={`https://x.com/${item.username}/status/${item.post_id}`} target="_blank" rel="noopener">Open on X <Icon name="open_in_new" size={14} /></a>
+        {/if}
+        <button class="heart" class:on={item.liked} aria-pressed={!!item.liked} onclick={heart}>
+          <Icon name={item.liked ? 'favorite_fill' : 'favorite'} size={18} /> {item.liked ? 'Liked' : 'Like'}
+        </button>
+      </div>
     </article>
 
     {#if sent}
       <p class="replied"><Icon name="check_circle" size={20} /> Replied. <a href={sent.url} target="_blank" rel="noopener">Open on X</a></p>
     {:else if draft}
-      {#if item.replied_post_id}
+      {#if item.replied_post_id || item.answered}
         <p class="quiet again">You already replied to this. You can reply again.</p>
       {/if}
       <div class="reply">
@@ -90,7 +121,16 @@
   time { font-variant-numeric: tabular-nums; }
 
   .text { margin-top: 12px; font-size: 1.12rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .out { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; min-height: 36px; font-size: 0.8rem; text-decoration: none; color: var(--text-secondary); }
+  .earlier { display: flex; gap: 10px; margin-bottom: 14px; font-size: 0.9rem; line-height: 1.45; }
+  .earlier > div { flex: 1; min-width: 0; }
+  .earlier p { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .earlier .who { font-size: 0.8rem; color: var(--text-secondary); }
+  .earlier .who strong { font-weight: 500; color: var(--text-primary); }
+
+  .actions { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
+  .heart { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; font-size: 0.8rem; color: var(--text-secondary); margin-inline-start: auto; }
+  .heart.on { color: var(--heart); }
+  .out { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; font-size: 0.8rem; text-decoration: none; color: var(--text-secondary); }
 
   .reply { margin-top: 18px; padding: 14px 16px 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-raised); }
   .again { margin-top: 14px; }

@@ -1,8 +1,8 @@
 # notime
 
 A way to use X without looking at it. You can write posts, see who answered,
-and answer them back. There is no timeline, no search and no profiles, because
-those are the parts that eat the afternoon.
+answer them back, and keep up with direct messages. There is no timeline, no
+search and no profiles, because those are the parts that eat the afternoon.
 
 It is a single-user app. It signs in with one X account (`OWNER_USERNAME` in
 `wrangler.jsonc`) and refuses every other, since every call is billed to that
@@ -15,13 +15,19 @@ account's API credit.
 - Drafts: everything you type is saved on the device as you type it, images
   included, and stays until it is posted. Start a new post and the old one
   waits under Drafts.
-- Notifications: replies, mentions and quotes, each with a reply box. Likes,
-  reposts and follows show up as quiet one-line rows.
-- Push: replies, mentions and quotes reach your phone. Likes and the rest do
-  not unless you ask for them in Settings.
+- Notifications: replies, mentions and quotes, each with a reply box and a
+  heart. A back-and-forth with one person folds into one row that carries
+  the whole conversation. Likes, reposts and follows are left out: there is
+  nothing to do about them.
+- Messages: one-to-one direct messages, read and answered as a chat. X's API
+  only reaches conversations that are not end-to-end encrypted.
+- Push: replies, mentions, quotes and messages reach your phone.
+- Cost: the real credit balance from X, with the app's own tally of where it
+  went.
 
 Left out on purpose: video, GIFs, quote posts (X sells those to Enterprise
-only), scheduling, DMs.
+only), scheduling, group messages, settings for anything the app can work
+out itself.
 
 ## How it is built
 
@@ -36,7 +42,7 @@ files, headers intact).
     test/       unit tests, plus two browser walkthroughs
 
 Notifications are pushed to us by X rather than polled. The X Activity API
-delivers each reply, mention, quote, repost, like and follow to
+delivers each reply, mention, quote and direct message to
 `/api/webhook/x`, signed with the app's OAuth 2.0 client secret. The Worker
 checks the signature, stores the event, and sends a web push. The "check"
 button on the notifications screen reads the mentions timeline as a safety
@@ -60,7 +66,7 @@ and use `http://127.0.0.1:8787` exactly. That address is registered as a
 callback with X; `localhost` is not.
 
     npm test                      # unit tests
-    node test/e2e.mjs             # the whole app in a headless phone
+    node test/e2e.mjs             # the whole app in a headless phone (CHROME_PATH to pick a browser)
     node test/updates.mjs         # the service worker update flow
 
 Both browser scripts need `npm run dev` running in another terminal.
@@ -73,7 +79,8 @@ Both browser scripts need `npm run dev` running in another terminal.
     npm run deploy
 
 Then open the site and sign in. Signing in registers the webhook with X and
-creates the six subscriptions. Settings shows whether each one took, with X's
+creates the five subscriptions. The X app needs "Read and write and Direct
+message" permissions in the developer console for messages to work. Settings shows whether each one took, with X's
 own error text if it did not, and a button to try again.
 
 Secrets the Worker expects: `X_CLIENT_ID`, `X_CLIENT_SECRET`,

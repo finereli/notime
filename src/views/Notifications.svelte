@@ -2,7 +2,8 @@
   import Avatar from '../components/Avatar.svelte'
   import Icon from '../components/Icon.svelte'
   import { notifications } from '../lib/notifications.svelte'
-  import { VERB, collapse, displayName, who } from '../lib/collapse'
+  import { VERB, collapse, displayName } from '../lib/collapse'
+  import { explain } from '../lib/prefs.svelte'
   import { ago } from '../lib/time'
   import { toasts } from '$shared/lib/toast.svelte'
 
@@ -15,14 +16,16 @@
     if (notifications.loaded && notifications.unread) notifications.markRead()
   })
 
-  const ICON = { repost: 'repeat', follow: 'person_add' } as const
-
   // Opening the list rereads it. The read is from our own database and free.
   notifications.load()
 
   async function more() {
     loadingMore = true
     try { await notifications.loadMore() } catch { toasts.error('Could not load more') } finally { loadingMore = false }
+  }
+
+  async function heart(id: string, on: boolean) {
+    try { await notifications.like(id, on) } catch (e) { toasts.error(explain(e, 'X did not take the like')) }
   }
 </script>
 
@@ -36,46 +39,39 @@
   {:else if rows.length === 0}
     <div class="empty">
       <h2>Nothing yet.</h2>
-      <p class="quiet">Replies and mentions will show up here, and on your phone if you turn notifications on in settings.</p>
+      <p class="quiet">Replies, mentions and quotes will show up here, and on your phone if you turn notifications on in settings.</p>
     </div>
   {:else}
     <ul>
       {#each rows as row (row.key)}
-        {@const first = row.items[0]}
+        {@const last = row.items[row.items.length - 1]}
+        {@const earlier = row.items.length - 1}
         <li class:unread={row.unread}>
-          {#if row.type === 'reply' || row.type === 'mention' || row.type === 'quote'}
-            <a class="post" href={`#/n/${encodeURIComponent(first.id)}`}>
-              <Avatar src={first.avatar} name={displayName(first)} />
-              <div class="main">
-                <p class="head">
-                  <strong>{displayName(first)}</strong>
-                  <span>{VERB[row.type]}</span>
-                  <time>{ago(row.created_at)}</time>
-                </p>
-                <p class="text" dir="auto">{first.text}</p>
-                {#if first.target_text}
-                  <p class="context" dir="auto">{first.target_text}</p>
-                {/if}
-                {#if first.replied_post_id}
-                  <p class="replied"><Icon name="reply" size={14} /> You replied</p>
-                {/if}
-              </div>
-            </a>
-          {:else}
-            <div class="activity">
-              <span class="glyph"><Icon name={ICON[row.type]} size={20} /></span>
-              <div class="main">
-                <p class="head">
-                  <strong>{who(row)}</strong>
-                  <span>{VERB[row.type]}</span>
-                  <time>{ago(row.created_at)}</time>
-                </p>
-                {#if first.target_text}
-                  <p class="context" dir="auto">{first.target_text}</p>
-                {/if}
-              </div>
+          <a class="post" href={`#/n/${encodeURIComponent(last.id)}`}>
+            <Avatar src={last.avatar} name={displayName(last)} />
+            <div class="main">
+              <p class="head">
+                <strong>{displayName(last)}</strong>
+                <span>{VERB[row.type]}</span>
+                <time>{ago(row.created_at)}</time>
+              </p>
+              {#if earlier}
+                <p class="thread"><Icon name="forum" size={14} /> {earlier === 1 ? 'Continues a conversation' : `${earlier + 1} replies in this conversation`}</p>
+              {/if}
+              <p class="text" dir="auto">{last.text}</p>
+              {#if last.target_text}
+                <p class="context" dir="auto">{last.target_text}</p>
+              {/if}
             </div>
-          {/if}
+          </a>
+          <div class="foot">
+            {#if last.replied_post_id || last.answered}
+              <span class="replied"><Icon name="reply" size={14} /> You replied</span>
+            {/if}
+            <button class="heart" class:on={last.liked} aria-pressed={!!last.liked} aria-label={last.liked ? 'Unlike' : 'Like'} onclick={() => heart(last.id, !last.liked)}>
+              <Icon name={last.liked ? 'favorite_fill' : 'favorite'} size={18} />
+            </button>
+          </div>
         </li>
       {/each}
     </ul>
@@ -91,11 +87,10 @@
   li { border-bottom: 1px solid var(--border); position: relative; }
   li.unread::before { content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; width: 3px; background: var(--mark); }
 
-  .post, .activity { display: flex; gap: 12px; padding: 14px 18px; color: inherit; text-decoration: none; }
+  .post { display: flex; gap: 12px; padding: 14px 18px 0; color: inherit; text-decoration: none; }
   .post { transition: background 0.15s; }
   .post:hover { background: var(--bg-hover); }
   .post:active { background: var(--bg-hover); }
-  .glyph { width: 40px; height: 28px; flex: none; display: grid; place-items: center; color: var(--text-secondary); }
   .main { flex: 1; min-width: 0; }
 
   .head { display: flex; align-items: baseline; gap: 6px; font-size: 0.85rem; color: var(--text-secondary); }
@@ -109,7 +104,13 @@
     font-size: 0.82rem; line-height: 1.4; color: var(--text-secondary);
     display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  .replied { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 0.75rem; color: var(--accent); }
+  .thread { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 0.75rem; color: var(--text-secondary); }
+
+  /* Outside the link, so the heart is its own tap target. Lined up with the text. */
+  .foot { display: flex; align-items: center; gap: 8px; padding: 0 8px 2px 70px; min-height: 40px; }
+  .replied { display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: var(--accent); }
+  .heart { margin-inline-start: auto; width: 44px; height: 40px; display: grid; place-items: center; color: var(--text-secondary); }
+  .heart.on { color: var(--heart); }
 
   .empty { padding: 12vh 18px 0; }
   .empty h2 { font-family: var(--font-write); font-size: 1.5rem; font-weight: 400; margin-bottom: 6px; }

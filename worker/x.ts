@@ -1,5 +1,6 @@
 import type { Env } from './env'
 import { bump, hasUrl } from './usage'
+import { cleanPosts, parseDm, type Dm } from './events'
 
 // Everything we ask of X goes through this interface, so local development
 // and the tests can run against a fake that costs nothing and posts nothing.
@@ -12,6 +13,8 @@ export interface XPost {
   created_at?: string
   in_reply_to_user_id?: string
   referenced_tweets?: Array<{ type: string; id: string }>
+  // The post this one answers: '' for none, undefined when unknown.
+  reply_to?: string
 }
 export interface PostBody {
   text?: string
@@ -25,6 +28,8 @@ export interface Webhook { id: string; url: string; valid: boolean }
 export interface Subscription { id: string; event_type: string; webhook_id?: string; filter?: Record<string, unknown> }
 export interface PostsPage { posts: XPost[]; oldestId?: string }
 export interface MentionsPage { posts: XPost[]; users: XUser[]; parents: XPost[]; newestId?: string }
+export interface DmPage { dms: Dm[]; users: XUser[]; next?: string }
+export interface Credits { total: number; free: number; prepaid: number; expires?: string }
 
 export class XError extends Error {
   constructor(public status: number, public detail: string, public body?: unknown) {
@@ -49,6 +54,13 @@ export interface X {
   listSubscriptions(token: string): Promise<Subscription[]>
   createSubscription(token: string, body: Record<string, unknown>): Promise<void>
   deleteSubscription(token: string, id: string): Promise<void>
+  like(token: string, userId: string, postId: string): Promise<void>
+  unlike(token: string, userId: string, postId: string): Promise<void>
+  // Recent direct messages, all conversations or one person's.
+  dms(token: string, ownerId: string, opts: { partnerId?: string; next?: string; max?: number }): Promise<DmPage>
+  sendDm(token: string, ownerId: string, partnerId: string, text: string): Promise<Dm>
+  findUser(token: string, username: string): Promise<XUser | null>
+  credits(token: string): Promise<Credits | null>
 }
 
 const API = 'https://api.x.com'
@@ -81,6 +93,13 @@ export function problemDetail(data: any): string {
 }
 
 const USER_FIELDS = 'user.fields=profile_image_url,name,username'
+const POST_FIELDS = 'created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,note_tweet'
+const DM_QUERY = {
+  event_types: 'MessageCreate',
+  'dm_event.fields': 'id,text,event_type,created_at,sender_id,dm_conversation_id,participant_ids',
+  expansions: 'sender_id,participant_ids',
+  'user.fields': 'profile_image_url,name,username',
+}
 
 export function realX(env: Env): X {
   const db = env.DB
@@ -107,9 +126,9 @@ export function realX(env: Env): X {
       return r?.data ?? null
     },
     async getPost(token, id) {
-      const r = await call('GET', `/2/tweets/${id}?tweet.fields=created_at,author_id`, token)
+      const r = await call('GET', `/2/tweets/${id}?tweet.fields=${POST_FIELDS}`, token)
       await bump(db, 'post_read')
-      return r?.data ?? null
+      return cleanPosts([r?.data])[0] ?? null
     },
     async createPost(token, body) {
       const r = await call('POST', '/2/tweets', token, body as Record<string, unknown>)
@@ -131,23 +150,24 @@ export function realX(env: Env): X {
       const q = new URLSearchParams({
         max_results: sinceId ? '100' : '20',
         expansions: 'author_id,referenced_tweets.id',
-        'tweet.fields': 'created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets',
+        'tweet.fields': POST_FIELDS,
         'user.fields': 'profile_image_url,name,username',
       })
       if (sinceId) q.set('since_id', sinceId)
       const r = await call('GET', `/2/users/${userId}/mentions?${q}`, token)
-      const posts: XPost[] = r?.data ?? []
+      // Keep the raw shape (referenced_tweets and all) and the full text.
+      const posts: XPost[] = (r?.data ?? []).map((p: any) => ({ ...p, text: p.note_tweet?.text ?? p.text }))
       await bump(db, 'owned_read', posts.length)
-      return { posts, users: r?.includes?.users ?? [], parents: r?.includes?.tweets ?? [], newestId: r?.meta?.newest_id }
+      return { posts, users: r?.includes?.users ?? [], parents: cleanPosts(r?.includes?.tweets), newestId: r?.meta?.newest_id }
     },
     async myPosts(token, userId, range) {
       // The owner's own timeline is an owned read too. Reposts are left out:
       // they are someone else's words.
-      const q = new URLSearchParams({ max_results: range.sinceId ? '100' : '20', exclude: 'retweets', 'tweet.fields': 'created_at,author_id,note_tweet' })
+      const q = new URLSearchParams({ max_results: range.sinceId ? '100' : '20', exclude: 'retweets', 'tweet.fields': POST_FIELDS })
       if (range.sinceId) q.set('since_id', range.sinceId)
       if (range.untilId) q.set('until_id', range.untilId)
       const r = await call('GET', `/2/users/${userId}/tweets?${q}`, token)
-      const posts: XPost[] = (r?.data ?? []).map((p: any) => ({ id: String(p.id), text: p.note_tweet?.text ?? p.text, author_id: userId, created_at: p.created_at }))
+      const posts: XPost[] = cleanPosts(r?.data).map((p) => ({ ...p, author_id: userId }))
       await bump(db, 'owned_read', posts.length)
       return { posts, oldestId: r?.meta?.oldest_id }
     },
@@ -161,13 +181,51 @@ export function realX(env: Env): X {
       await call('PUT', `/2/webhooks/${id}`, env.X_BEARER_TOKEN)
     },
     async listSubscriptions(token) {
-      return (await call('GET', '/2/activity/subscriptions', token))?.data ?? []
+      // X names the id subscription_id here, and id nowhere else.
+      return ((await call('GET', '/2/activity/subscriptions', token))?.data ?? []).map((s: any) => ({ ...s, id: String(s.subscription_id ?? s.id) }))
     },
     async createSubscription(token, body) {
       await call('POST', '/2/activity/subscriptions', token, body)
     },
     async deleteSubscription(token, id) {
       await call('DELETE', `/2/activity/subscriptions/${id}`, token)
+    },
+    async like(token, userId, postId) {
+      await call('POST', `/2/users/${userId}/likes`, token, { tweet_id: postId })
+      await bump(db, 'like')
+    },
+    async unlike(token, userId, postId) {
+      await call('DELETE', `/2/users/${userId}/likes/${postId}`, token)
+      await bump(db, 'unlike')
+    },
+    async dms(token, ownerId, { partnerId, next, max = 50 }) {
+      const q = new URLSearchParams({ ...DM_QUERY, max_results: String(max) })
+      if (next) q.set('pagination_token', next)
+      const path = partnerId ? `/2/dm_conversations/with/${partnerId}/dm_events` : '/2/dm_events'
+      const r = await call('GET', `${path}?${q}`, token)
+      const dms = (r?.data ?? []).map((e: any) => parseDm(e, ownerId)).filter(Boolean) as Dm[]
+      await bump(db, 'dm_read', (r?.data ?? []).length)
+      return { dms, users: r?.includes?.users ?? [], next: r?.meta?.next_token }
+    },
+    async sendDm(token, ownerId, partnerId, text) {
+      const r = await call('POST', `/2/dm_conversations/with/${partnerId}/messages`, token, { text })
+      await bump(db, 'dm_send')
+      return { id: String(r.data.dm_event_id), conversation_id: r.data.dm_conversation_id ?? null, partner_id: partnerId, sender_id: ownerId, text, created_at: new Date().toISOString() }
+    },
+    async findUser(token, username) {
+      const r = await call('GET', `/2/users/by/username/${encodeURIComponent(username)}?${USER_FIELDS}`, token).catch((e) => {
+        if (e instanceof XError && e.status === 404) return null
+        throw e
+      })
+      if (r?.data) await bump(db, 'user_read')
+      return r?.data ?? null
+    },
+    async credits(token) {
+      // The real balance, straight from X. Free to ask.
+      const d = (await call('GET', '/2/usage/credits', token))?.data
+      if (!d || typeof d.total_balance !== 'number') return null
+      const expires = (d.free_grants ?? []).map((g: any) => g?.expires_at).filter(Boolean).sort()[0]
+      return { total: d.total_balance, free: d.free_balance ?? 0, prepaid: d.prepaid_balance ?? 0, expires }
     },
   }
 }
@@ -219,5 +277,28 @@ export function fakeX(env: Env): X {
     async listSubscriptions() { return [] },
     async createSubscription() {},
     async deleteSubscription() {},
+    async like(_t, _u, postId) {
+      if (postId === '0') throw new XError(403, 'You are not permitted to like this post.')
+    },
+    async unlike() {},
+    async dms(_t, ownerId, { partnerId, next }) {
+      if (next) return { dms: [], users: [] }
+      const now = Date.now()
+      const all: Dm[] = [
+        { id: 'd3', conversation_id: `${ownerId}-2001`, partner_id: '2001', sender_id: '2001', text: 'Also, is the offline mode open source?', created_at: new Date(now - 20 * 6e4).toISOString() },
+        { id: 'd2', conversation_id: `${ownerId}-2001`, partner_id: '2001', sender_id: ownerId, text: 'Thanks! Happy to talk about it.', created_at: new Date(now - 50 * 6e4).toISOString() },
+        { id: 'd1', conversation_id: `${ownerId}-2001`, partner_id: '2001', sender_id: '2001', text: 'Loved the post about small tools. Could I ask you a couple of questions?', created_at: new Date(now - 90 * 6e4).toISOString() },
+        { id: 'd0', conversation_id: `${ownerId}-3003`, partner_id: '3003', sender_id: '3003', text: 'Are you coming to the meetup on Thursday?', created_at: new Date(now - 26 * 36e5).toISOString() },
+      ]
+      return { dms: all.filter((d) => !partnerId || d.partner_id === partnerId), users: [ana, { id: '3003', username: 'tomasz', name: 'Tomasz Nowak' }] }
+    },
+    async sendDm(_t, ownerId, partnerId, text) {
+      if (text.includes('#fail')) throw new XError(403, 'You cannot send messages to this user.')
+      return { id: id(), conversation_id: `${ownerId}-${partnerId}`, partner_id: partnerId, sender_id: ownerId, text, created_at: new Date().toISOString() }
+    },
+    async findUser(_t, username) {
+      return username === 'nobody' ? null : { id: '4' + username.length + '00', username, name: username[0].toUpperCase() + username.slice(1) }
+    },
+    async credits() { return { total: 19.81, free: 19.81, prepaid: 0, expires: '2027-01-09T16:20:47.000Z' } },
   }
 }

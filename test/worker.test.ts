@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { crcResponse, verifySignature } from '../worker/webhook'
 import { encryptPayload, vapidToken } from '../worker/push'
 import { b64uDecode, b64uEncode, concat, utf8, type Bytes } from '../worker/bytes'
-import { mentionNotification, parseEvent, pushText } from '../worker/events'
+import { mentionNotification, parseDm, parseEvent, pushText, replyTo } from '../worker/events'
 import { NeedsLogin, RefreshRejected, freshToken, type TokenRow, type TokenSet, type TokenStore } from '../worker/oauth'
 import { cost, hasUrl } from '../worker/usage'
 
@@ -98,9 +98,25 @@ describe('events', () => {
     expect(parseEvent(env('post.reply.create', post), OWNER).notification!.id).toBe(parseEvent(env('post.mention.create', post), OWNER).notification!.id)
   })
 
-  it('reads a quote and a repost', () => {
+  it('reads a quote, and ignores reposts and follows', () => {
     expect(parseEvent(env('post.quote.create', { id: '53', text: 'this', author_id: '2001', referenced_tweets: [{ type: 'quoted', id: '40' }] }), OWNER).notification).toMatchObject({ id: 'post:53', type: 'quote', target_post_id: '40' })
-    expect(parseEvent(env('post.repost.create', { id: '54', text: 'RT @owner: hi', author_id: '2001', referenced_tweets: [{ type: 'retweeted', id: '40' }] }), OWNER).notification).toMatchObject({ id: 'repost:54', type: 'repost', target_post_id: '40' })
+    expect(parseEvent(env('post.repost.create', { id: '54', text: 'RT @owner: hi', author_id: '2001', referenced_tweets: [{ type: 'retweeted', id: '40' }] }), OWNER).notification).toBeNull()
+    expect(parseEvent(env('follow.follow', { source: { data: author }, target: { data: { id: OWNER, username: 'owner' } } }), OWNER).notification).toBeNull()
+  })
+
+  it('keeps the whole of a long post, its own and the one it answers', () => {
+    const long = 'word '.repeat(100).trim()
+    const p = parseEvent(env('post.reply.create', { id: '56', text: long.slice(0, 280), note_tweet: { text: long }, author_id: '2001', referenced_tweets: [{ type: 'replied_to', id: '40' }] }, { tweets: [{ id: '40', text: 'short', note_tweet: { text: 'short and then much longer' }, author_id: OWNER, conversation_id: '40' }] }), OWNER)
+    expect(p.notification!.text).toBe(long)
+    expect(p.posts.find((x) => x.id === '40')).toMatchObject({ text: 'short and then much longer', reply_to: '' })
+    expect(p.posts.find((x) => x.id === '56')).toMatchObject({ text: long, reply_to: '40' })
+  })
+
+  it('knows what a post answers, and when it cannot tell', () => {
+    expect(replyTo({ id: '5', referenced_tweets: [{ type: 'replied_to', id: '4' }] })).toBe('4')
+    expect(replyTo({ id: '5', referenced_tweets: [{ type: 'quoted', id: '4' }] })).toBe('')
+    expect(replyTo({ id: '5', conversation_id: '5' })).toBe('')
+    expect(replyTo({ id: '5' })).toBeUndefined()
   })
 
   it('drops likes: nothing to do about a like', () => {
@@ -110,10 +126,24 @@ describe('events', () => {
     expect(p.billed).toBe('event_like')
   })
 
-  it('reads a follow from payload.source', () => {
-    const p = parseEvent(env('follow.follow', { source: { data: author }, target: { data: { id: OWNER, username: 'owner' } } }), OWNER)
-    expect(p.notification).toMatchObject({ id: 'follow:2001', type: 'follow', actor_id: '2001' })
-    expect(p.users[0]).toMatchObject({ id: '2001', username: 'ana' })
+  it('reads a direct message in the shape the Activity API delivers', () => {
+    const payload = {
+      direct_message_events: [{ type: 'message_create', id: 'dm1', created_timestamp: '1760176800000', message_create: { target: { recipient_id: OWNER }, sender_id: '2001', message_data: { text: 'hello there' } } }],
+      users: { '2001': { id: '2001', name: 'Ana Lima', screen_name: 'ana', profile_image_url_https: 'https://img/ana.jpg' } },
+    }
+    const p = parseEvent(env('dm.received', payload), OWNER)
+    expect(p.dm).toEqual({ id: 'dm1', conversation_id: null, partner_id: '2001', sender_id: '2001', text: 'hello there', created_at: '2025-10-11T10:00:00.000Z' })
+    expect(p.users[0]).toMatchObject({ id: '2001', username: 'ana', profile_image_url: 'https://img/ana.jpg' })
+    expect(p.billed).toBe('event_dm')
+    const sent = parseEvent(env('dm.sent', { direct_message_events: [{ id: 'dm2', created_timestamp: '1760176800000', message_create: { target: { recipient_id: '2001' }, sender_id: OWNER, message_data: { text: 'hi' } } }] }), OWNER)
+    expect(sent.dm).toMatchObject({ partner_id: '2001', sender_id: OWNER })
+    expect(sent.billed).toBeNull()
+  })
+
+  it('reads a v2 dm_event, and leaves group conversations out', () => {
+    expect(parseDm({ id: 'e1', event_type: 'MessageCreate', text: 'yo', sender_id: OWNER, dm_conversation_id: `2001-${OWNER}`, created_at: '2026-10-11T10:00:00.000Z' }, OWNER)).toMatchObject({ partner_id: '2001', sender_id: OWNER })
+    expect(parseDm({ id: 'e2', event_type: 'MessageCreate', text: 'all', sender_id: '2001', dm_conversation_id: '1590000000000000000' }, OWNER)).toBeNull()
+    expect(parseDm({ id: 'e3', event_type: 'ParticipantsJoin', sender_id: '2001', dm_conversation_id: `2001-${OWNER}` }, OWNER)).toBeNull()
   })
 
   it('ignores the owner replying to themselves', () => {
@@ -121,9 +151,10 @@ describe('events', () => {
   })
 
   it('survives payloads that are missing, wrong or unknown', () => {
-    for (const ev of [null, undefined, {}, { event_type: 'post.reply.create' }, { event_type: 'like.create', payload: null }, { event_type: 'follow.follow', payload: { source: 7 } }, { event_type: 'news.new', payload: { x: 1 } }, { event_type: 'post.mention.create', payload: { id: '1' }, includes: { users: 'nope', tweets: [null, 3] } }]) {
+    for (const ev of [null, undefined, {}, { event_type: 'post.reply.create' }, { event_type: 'like.create', payload: null }, { event_type: 'follow.follow', payload: { source: 7 } }, { event_type: 'news.new', payload: { x: 1 } }, { event_type: 'post.mention.create', payload: { id: '1' }, includes: { users: 'nope', tweets: [null, 3] } }, { event_type: 'dm.received', payload: { direct_message_events: [null, { id: 1 }], users: 'x' } }, { event_type: 'dm.sent', payload: null }]) {
       expect(() => parseEvent(ev, OWNER)).not.toThrow()
       expect(parseEvent(ev, OWNER).notification).toBeNull()
+      expect(parseEvent(ev, OWNER).dm).toBeNull()
     }
   })
 
@@ -134,9 +165,9 @@ describe('events', () => {
   })
 
   it('writes push text that says who did what', () => {
-    expect(pushText('reply', 'Ana Lima', 'agreed', 'my post')).toEqual({ title: 'Ana Lima replied', body: 'agreed' })
-    expect(pushText('repost', 'Ana Lima', 'RT @owner: my post', 'my post')).toEqual({ title: 'Ana Lima reposted you', body: 'my post' })
-    expect(pushText('follow', 'Ana Lima', null, null)).toEqual({ title: 'Ana Lima followed you', body: '' })
+    expect(pushText('reply', 'Ana Lima', 'agreed')).toEqual({ title: 'Ana Lima replied', body: 'agreed' })
+    expect(pushText('quote', 'Ana Lima', 'this')).toEqual({ title: 'Ana Lima quoted you', body: 'this' })
+    expect(pushText('mention', 'Ana Lima', null)).toEqual({ title: 'Ana Lima mentioned you', body: '' })
   })
 })
 

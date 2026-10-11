@@ -13,7 +13,8 @@ const BASE = 'http://127.0.0.1:8787'
 const out = process.argv[2] || 'test-results'
 mkdirSync(out, { recursive: true })
 
-const browser = await chromium.launch()
+// CHROME_PATH lets a machine with a different Playwright build bring its own browser.
+const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {})
 const context = await browser.newContext({ ...devices['iPhone 14'], colorScheme: 'light' })
 const page = await context.newPage()
 const errors = []
@@ -92,20 +93,52 @@ const deliver = async (event_type, payload, includes = {}) => {
   const res = await fetch(BASE + '/api/webhook/x', { method: 'POST', body, headers: { 'X-Twitter-Webhooks-Signature-OAuth2': 'sha256=' + createHmac('sha256', secret).update(body).digest('base64') } })
   assert.equal(res.status, 200)
 }
+// Reposts, likes and follows are not notifications here, even if X sends one.
 const repost = (id, author) => ({ id, text: 'RT @finereli: Most tools get worse', author_id: author, created_at: now, referenced_tweets: [{ type: 'retweeted', id: '9001' }] })
-await deliver('post.repost.create', repost('7101', '2001'), { users: [{ id: '2001', username: 'ana_writes', name: 'Ana Lima' }] })
 await deliver('post.repost.create', repost('7102', '4004'), { users: [{ id: '4004', username: 'sam', name: 'Sam Okafor' }] })
 await deliver('like.create', { id: 'l1', created_at: now, liking_user_id: '6006', liked_tweet_id: '9001', liked_tweet_author_id: '1000' }, { users: [{ id: '6006', username: 'lee', name: 'Lee Park' }] })
 await deliver('follow.follow', { source: { data: { id: '5005', username: 'mira', name: 'Mira Chen' } }, target: { data: { id: '1000', username: 'finereli' } } })
+
+// A back-and-forth: Max replies, you answer (on X itself), Max answers that.
+// Long posts arrive whole, not cut at 280.
+const maxUser = { id: '7000', username: 'maxk', name: 'Max Kalashnikov' }
+const at = (min) => new Date(Date.now() - min * 60000).toISOString()
+const long = 'I started with micro SaaS, a Chrome extension, then pivoted to a game as an experiment, because I know the niche. ' + 'Technically it can be anything: SaaS, AI automation, games. '.repeat(4) + 'I am really missing the user-first angle.'
+await deliver('post.reply.create', { id: '7201', text: '@finereli thanks for Obviously Awesome. Books are how I learn.', author_id: '7000', created_at: at(30), conversation_id: '9001', referenced_tweets: [{ type: 'replied_to', id: '9001' }] }, { users: [maxUser] })
+await deliver('post.reply.create', { id: '7203', text: long.slice(0, 280), note_tweet: { text: long }, author_id: '7000', created_at: at(10), conversation_id: '9001', referenced_tweets: [{ type: 'replied_to', id: '7202' }] }, {
+  users: [maxUser],
+  tweets: [{ id: '7202', text: '@maxkalashnikoff Start with positioning. Games are more art than science.', author_id: '1000', conversation_id: '9001', referenced_tweets: [{ type: 'replied_to', id: '7201' }] }],
+})
+// A direct message.
+await deliver('dm.received', { direct_message_events: [{ type: 'message_create', id: 'dm-live', created_timestamp: String(Date.now() - 60000), message_create: { target: { recipient_id: '1000' }, sender_id: '2001', message_data: { text: 'One more thing: can I share this with my team?' } } }], users: { '2001': { id: '2001', name: 'Ana Lima', screen_name: 'ana_writes' } } })
 assert.equal((await fetch(BASE + '/api/webhook/x', { method: 'POST', body: '{}' })).status, 403, 'an unsigned delivery is refused')
 await page.waitForTimeout(800)
 
 // --- notifications ---
 await page.getByRole('button', { name: 'Notifications', exact: true }).click()
 await page.getByText('Ana Lima').first().waitFor()
+await page.getByText('Continues a conversation').waitFor()
 await shot('07-notifications')
-assert.ok(await page.getByText(/and Sam Okafor|and Ana Lima/).count(), 'reposts of one post fold into one row')
-assert.equal(await page.getByText('Lee Park').count(), 0, 'likes never reach the list')
+for (const who of ['Lee Park', 'Sam Okafor', 'Mira Chen']) assert.equal(await page.getByText(who).count(), 0, who + ' never reaches the list')
+assert.equal(await page.getByText('Books are how I learn').count(), 0, 'the earlier reply folds into the newer one')
+assert.ok(await page.getByText('I am really missing the user-first angle').count(), 'a long reply shows whole')
+
+// --- the conversation, then a like ---
+await page.getByText('Continues a conversation').click()
+await page.getByText('Books are how I learn').waitFor()
+await page.getByText('Games are more art than science').waitFor()
+await shot('07b-conversation')
+await page.getByRole('button', { name: 'Like', exact: true }).click()
+await page.getByRole('button', { name: 'Liked' }).waitFor()
+await page.getByRole('button', { name: 'Back' }).click()
+const maxRow = page.locator('li', { hasText: 'Continues a conversation' })
+assert.equal(await maxRow.getByRole('button', { name: 'Unlike' }).count(), 1, 'the heart shows in the list')
+const anaRow = page.locator('li', { hasText: 'clearest explanation' })
+await anaRow.getByRole('button', { name: 'Like' }).click()
+await anaRow.getByRole('button', { name: 'Unlike' }).waitFor()
+await anaRow.getByRole('button', { name: 'Unlike' }).click()
+await anaRow.getByRole('button', { name: 'Like' }).waitFor()
+await shot('07c-liked')
 
 // --- reply, with a draft that survives leaving ---
 await page.getByText('this is the clearest explanation').click()
@@ -149,27 +182,50 @@ assert.match(await page.getByLabel('Post text').inputValue(), /^Still true\. htt
 await page.getByText('Posts with a link cost $0.20 to send.').waitFor()
 await page.getByLabel('Post text').fill('')
 
-// --- long posts: held at 280 until allowed in settings ---
+// --- long posts: no setting; when X will not say, X decides at send time ---
 await page.goto(BASE + '/#/')
 await page.getByLabel('Post text').fill('word '.repeat(70))
-await page.getByText(/over the limit of 280/).waitFor()
-assert.equal(await page.getByRole('button', { name: 'Post', exact: true }).isDisabled(), true)
-await page.goto(BASE + '/#/settings')
-await page.getByRole('button', { name: 'Allow long posts' }).click()
-await page.getByRole('button', { name: 'Limit posts to 280 characters' }).waitFor()
-await page.goto(BASE + '/#/')
 await page.getByText(/a long post/).waitFor()
 assert.equal(await page.getByRole('button', { name: 'Post', exact: true }).isDisabled(), false)
 await shot('08e-long-post')
 await page.getByLabel('Post text').fill('')
 
+// --- messages ---
+await page.goto(BASE + '/#/messages')
+await page.getByText('Tomasz Nowak').waitFor()
+await page.getByText('can I share this with my team?').waitFor()
+await shot('09a-messages')
+await page.getByText('Ana Lima').click()
+await page.getByText('Loved the post about small tools').waitFor()
+const msg = page.getByRole('textbox', { name: 'Message' })
+await msg.fill('Sure, go ahead.')
+await page.getByRole('button', { name: 'Back' }).click()
+await page.getByText('Ana Lima').click()
+assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Sure, go ahead.', 'a half-written message waits')
+await page.getByRole('button', { name: 'Send' }).click()
+await page.locator('.mine', { hasText: 'Sure, go ahead.' }).locator('.meta', { hasText: /\d/ }).waitFor()
+await page.getByRole('textbox', { name: 'Message' }).fill('this one fails #fail')
+await page.getByRole('button', { name: 'Send' }).click()
+await page.getByText('You cannot send messages to this user.').waitFor()
+await shot('09b-chat')
+await page.getByRole('button', { name: 'Back' }).click()
+await page.getByText('You: Sure, go ahead.').waitFor()
+await page.getByRole('button', { name: 'New message' }).click()
+await page.getByPlaceholder('@username').fill('@ruth')
+await page.getByRole('button', { name: 'Write' }).click()
+await page.getByText('No messages here yet').waitFor()
+await page.goto(BASE + '/#/messages')
+await page.getByRole('button', { name: 'New message' }).click()
+await page.getByPlaceholder('@username').fill('nobody')
+await page.getByRole('button', { name: 'Write' }).click()
+await page.getByText('There is no @nobody on X').waitFor()
+
 // --- settings, light and dark ---
 await page.goto(BASE + '/#/settings')
 await page.getByText('Connection to X').waitFor()
-await page.getByText('this month, roughly').waitFor()
-await page.getByRole('button', { name: 'Also notify me about reposts' }).click()
-await page.getByRole('button', { name: 'Stop notifying me about reposts' }).waitFor()
-await page.getByRole('button', { name: 'Stop notifying me about reposts' }).click()
+await page.getByText('$19.81 left on X').waitFor()
+assert.equal(await page.getByText(/reposts and follows/).count(), 0, 'no notification toggles')
+assert.equal(await page.getByText('Post length').count(), 0, 'no long post toggle')
 await shot('09-settings')
 await page.getByRole('button', { name: 'Menu', exact: true }).click()
 await page.getByRole('button', { name: 'Dark mode' }).waitFor()
@@ -187,7 +243,7 @@ await shot('13-compose-dark')
 await page.getByLabel('Post text').fill('')
 
 // --- no horizontal overflow anywhere we have been ---
-for (const hash of ['#/', '#/notifications', '#/drafts', '#/settings']) {
+for (const hash of ['#/', '#/notifications', '#/drafts', '#/settings', '#/messages', '#/m/2001', '#/posts']) {
   await page.goto(BASE + '/' + hash)
   await page.waitForTimeout(150)
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll on ' + hash)

@@ -18,12 +18,15 @@
   import Posts from './views/Posts.svelte'
   import Post from './views/Post.svelte'
   import Settings from './views/Settings.svelte'
+  import Messages from './views/Messages.svelte'
+  import Chat from './views/Chat.svelte'
   import { apiJson } from './lib/api'
   import { auth, type User } from './lib/auth.svelte'
   import { drafts } from './lib/drafts.svelte'
+  import { dms } from './lib/dms.svelte'
   import { notifications } from './lib/notifications.svelte'
   import { posts } from './lib/posts.svelte'
-  import { prefs } from './lib/prefs.svelte'
+  import { explain, prefs } from './lib/prefs.svelte'
   import { router } from './lib/router.svelte'
   import { toasts } from '$shared/lib/toast.svelte'
 
@@ -32,18 +35,19 @@
 
   let menuOpen = $state(false)
   let dark = $state(isDark())
-  let pushAll = $state(false)
   let engaged = $state(false)
   router.onChange(() => (menuOpen = false))
 
   const view = $derived(router.route.view)
   const detailId = $derived(router.route.view === 'detail' ? router.route.id : '')
   const postRoute = $derived(router.route.view === 'post' ? router.route : null)
-  const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', drafts: 'Drafts', posts: 'Your posts', post: 'Your post', settings: 'Settings' }[view])
+  const chatId = $derived(router.route.view === 'chat' ? router.route.id : '')
+  const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', drafts: 'Drafts', posts: 'Posts', post: 'Post', settings: 'Settings', messages: 'Messages', chat: 'Message' }[view])
   const entries = $derived([
     { label: 'Write', hash: '/', current: view === 'write' },
     { label: 'Notifications', hash: '/notifications', current: view === 'notifications' || view === 'detail', count: notifications.unread || undefined },
-    { label: 'Your posts', hash: '/posts', current: view === 'posts' || view === 'post' },
+    { label: 'Messages', hash: '/messages', current: view === 'messages' || view === 'chat', count: dms.unread || undefined },
+    { label: 'Posts', hash: '/posts', current: view === 'posts' || view === 'post' },
     { label: 'Drafts', hash: '/drafts', current: view === 'drafts', count: drafts.parked.length || undefined },
     { label: 'Settings', hash: '/settings', current: view === 'settings' },
   ])
@@ -53,13 +57,13 @@
   async function refresh() {
     if (!auth.signedIn) return
     try {
-      const me = await apiJson<{ user: User; unread: number; pushAll: boolean; longPosts: boolean; longPostsFrom: 'you' | 'x' | 'unknown' }>('/api/me')
+      const me = await apiJson<{ user: User; unread: number; unreadDms: number; longPosts: boolean; missingScopes: string[] }>('/api/me')
       auth.setUser(me.user)
-      pushAll = me.pushAll
-      prefs.set(me.longPosts, me.longPostsFrom)
-      notifications.setUnread(me.unread)
+      prefs.set(me.longPosts, me.missingScopes)
+      notifications.setUnread(me.unread, me.unreadDms)
     } catch {}
     notifications.load()
+    dms.load()
   }
   refresh()
   auth.onChange(refresh)
@@ -67,10 +71,11 @@
 
   // The service worker tells an open app when a push arrived or was tapped.
   navigator.serviceWorker?.addEventListener('message', (e) => {
-    if (e.data?.type === 'push') notifications.load()
+    if (e.data?.type === 'push') { notifications.load(); dms.load() }
     if (e.data?.type === 'open' && typeof e.data.url === 'string') {
       location.hash = e.data.url.replace(/^\/?#?/, '')
       notifications.load()
+      dms.load()
     }
   })
 
@@ -95,6 +100,14 @@
     setDarkMode(dark)
   }
 
+  async function checkDms() {
+    try {
+      if (!(await dms.check())) toasts.error('Nothing new', 2000)
+    } catch (e) {
+      toasts.error(explain(e, 'Could not check X'))
+    }
+  }
+
   async function check() {
     try {
       const added = await notifications.check()
@@ -115,6 +128,14 @@
       <TopBar leading="back" {title} onleading={() => router.back('/notifications')} />
     {:else if view === 'post'}
       <TopBar leading="back" {title} onleading={() => router.back('/posts')} />
+    {:else if view === 'chat'}
+      <TopBar leading="back" {title} onleading={() => router.back('/messages')} />
+    {:else if view === 'messages'}
+      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for messages" ontrailing={checkDms}>
+        {#snippet trailing()}
+          <span class:turning={dms.checking}><Icon name="refresh" /></span>
+        {/snippet}
+      </TopBar>
     {:else if view === 'posts'}
       <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for posts made elsewhere" ontrailing={refreshPosts}>
         {#snippet trailing()}
@@ -124,7 +145,7 @@
     {:else if view === 'write'}
       <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Notifications" ontrailing={() => router.go('/notifications')}>
         {#snippet trailing()}
-          <span class="bell"><Icon name="notifications" />{#if notifications.unread}<i></i>{/if}</span>
+          <span class="bell"><Icon name="notifications" />{#if notifications.unread || dms.unread}<i></i>{/if}</span>
         {/snippet}
       </TopBar>
     {:else if view === 'notifications'}
@@ -142,6 +163,9 @@
     {/if}
 
     <main class="body">
+      {#if prefs.missingScopes.length && (view === 'notifications' || view === 'detail')}
+        <p class="grant">notime can now like replies and read your messages. <button onclick={() => auth.signIn()}>Sign in again</button> to allow it.</p>
+      {/if}
       {#if view === 'notifications'}
         <Notifications />
       {:else if view === 'detail'}
@@ -152,8 +176,12 @@
         <Posts />
       {:else if postRoute}
         {#key postRoute.id + postRoute.quote}<Post id={postRoute.id} quote={postRoute.quote} />{/key}
+      {:else if view === 'messages'}
+        <Messages />
+      {:else if chatId}
+        {#key chatId}<Chat id={chatId} />{/key}
       {:else if view === 'settings'}
-        <Settings bind:pushAll />
+        <Settings />
       {:else}
         <Write onposted={() => (engaged = true)} />
       {/if}
@@ -211,5 +239,7 @@
 
   .bell { position: relative; display: grid; }
   .bell i { position: absolute; top: 0; right: 0; width: 9px; height: 9px; border-radius: 50%; background: var(--mark); border: 2px solid var(--accent-deep); }
+  .grant { margin: 10px 18px 0; padding: 10px 14px; border-radius: 12px; background: var(--accent-soft); font-size: 0.85rem; line-height: 1.45; }
+  .grant button { color: var(--accent); text-decoration: underline; font-size: inherit; }
   .turning { display: grid; animation: spin 0.8s linear infinite; }
 </style>

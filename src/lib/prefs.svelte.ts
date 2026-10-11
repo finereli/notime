@@ -1,25 +1,36 @@
-// Account-level choices the composer needs before the server has answered,
-// so the last known value is kept on the device.
+// What the account can do, kept on the device so the composer knows before
+// the server has answered.
 
-const KEY = 'notime.prefs.v1'
+const KEY = 'notime.prefs.v2'
 
 class Prefs {
-  longPosts = $state(false)
-  longPostsFrom = $state<'you' | 'x' | 'unknown'>('unknown')
+  // Long posts come with Premium. The server asks X; when X will not say,
+  // this stays on and X decides when the post is sent.
+  longPosts = $state(true)
+  // OAuth scopes the app now uses that the current sign in did not grant.
+  missingScopes = $state<string[]>([])
 
   constructor() {
     try {
       const saved = JSON.parse(localStorage.getItem(KEY) || '{}')
-      this.longPosts = !!saved.longPosts
-      if (saved.longPostsFrom) this.longPostsFrom = saved.longPostsFrom
+      if (typeof saved.longPosts === 'boolean') this.longPosts = saved.longPosts
+      if (Array.isArray(saved.missingScopes)) this.missingScopes = saved.missingScopes
     } catch {}
   }
 
-  set(longPosts: boolean, from: 'you' | 'x' | 'unknown') {
+  set(longPosts: boolean, missingScopes: string[]) {
     this.longPosts = longPosts
-    this.longPostsFrom = from
-    localStorage.setItem(KEY, JSON.stringify({ longPosts, longPostsFrom: from }))
+    this.missingScopes = missingScopes
+    try { localStorage.setItem(KEY, JSON.stringify({ longPosts, missingScopes })) } catch {}
   }
 }
 
 export const prefs = new Prefs()
+
+// Errors from the API, in words. needs_scopes means the feature is newer than
+// the sign in.
+export function explain(e: unknown, fallback = 'That did not work'): string {
+  const msg = e instanceof Error ? e.message : ''
+  if (msg === 'needs_scopes') return 'Sign in again to allow this. X only grants what the app asked for at sign in.'
+  return msg || fallback
+}

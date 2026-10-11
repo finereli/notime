@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { weightedLength } from '../src/lib/text'
-import { collapse, who, type Item } from '../src/lib/collapse'
+import { collapse, handled, type Item } from '../src/lib/collapse'
 import * as d from '../src/lib/drafts-core'
 import { ago } from '../src/lib/time'
 
@@ -27,36 +27,40 @@ describe('character count', () => {
 })
 
 describe('collapsing the list', () => {
-  const item = (over: Partial<Item>): Item => ({ id: 'x', type: 'reply', actor_id: 'a', post_id: null, target_post_id: null, text: null, created_at: '2026-10-11T10:00:00.000Z', read: 1, replied_post_id: null, username: 'ana', name: 'Ana', avatar: null, target_text: null, ...over })
+  const item = (over: Partial<Item>): Item => ({ id: 'x', type: 'reply', actor_id: 'a', post_id: null, target_post_id: null, text: null, created_at: '2026-10-11T10:00:00.000Z', read: 1, replied_post_id: null, username: 'max', name: 'Max', avatar: null, target_text: null, prev_id: null, ...over })
 
-  it('folds reposts of one post into one row and leaves replies alone', () => {
-    const rows = collapse([
-      item({ id: 'like:a:40', type: 'repost', actor_id: 'a', target_post_id: '40', name: 'Ana', read: 0 }),
-      item({ id: 'post:51', type: 'reply', actor_id: 'b', name: 'Ben' }),
-      item({ id: 'like:b:40', type: 'repost', actor_id: 'b', target_post_id: '40', name: 'Ben' }),
-      item({ id: 'like:c:40', type: 'repost', actor_id: 'c', target_post_id: '40', name: 'Cy' }),
-      item({ id: 'like:a:41', type: 'repost', actor_id: 'a', target_post_id: '41', name: 'Ana' }),
-      item({ id: 'post:52', type: 'reply', actor_id: 'b', name: 'Ben' }),
-    ])
-    expect(rows.map((r) => r.key)).toEqual(['repost:40', 'post:51', 'repost:41', 'post:52'])
-    expect(rows[0].items).toHaveLength(3)
+  // The shape of a real afternoon: Max replied, you answered twice, he
+  // answered each, and one branch went on for two more rounds. Newest first,
+  // as the server sends them.
+  const max = [
+    item({ id: 'm5', prev_id: 'm4', created_at: '2026-10-11T16:34:00Z', read: 0 }),
+    item({ id: 'm4', prev_id: 'm3', created_at: '2026-10-11T16:02:00Z' }),
+    item({ id: 'm3', prev_id: 'm1', created_at: '2026-10-11T15:57:00Z' }),
+    item({ id: 'm2', prev_id: 'm1', created_at: '2026-10-11T15:55:00Z' }),
+    item({ id: 'o1', actor_id: 'b', name: 'Ben', created_at: '2026-10-11T15:40:00Z' }),
+    item({ id: 'm1', created_at: '2026-10-11T15:35:00Z' }),
+  ]
+
+  it('folds a back-and-forth into its newest reply, one row per branch', () => {
+    const rows = collapse(max)
+    expect(rows.map((r) => r.key)).toEqual(['m5', 'm2', 'o1'])
+    expect(rows[0].items.map((i) => i.id)).toEqual(['m1', 'm3', 'm4', 'm5'])
+    expect(rows[1].items.map((i) => i.id)).toEqual(['m1', 'm2'])
     expect(rows[0].unread).toBe(true)
-    expect(who(rows[0])).toBe('Ana and 2 others')
-    expect(who(rows[2])).toBe('Ana')
+    expect(rows[1].unread).toBe(false)
   })
 
-  it('names both people when there are two, and does not count one person twice', () => {
-    const rows = collapse([
-      item({ id: 'repost:1', type: 'repost', actor_id: 'a', target_post_id: '40', name: 'Ana' }),
-      item({ id: 'repost:2', type: 'repost', actor_id: 'b', target_post_id: '40', name: null, username: 'ben' }),
-      item({ id: 'repost:3', type: 'repost', actor_id: 'a', target_post_id: '40', name: 'Ana' }),
-    ])
-    expect(rows).toHaveLength(1)
-    expect(who(rows[0])).toBe('Ana and @ben')
+  it('stands alone when the earlier part is not loaded, and survives a loop', () => {
+    expect(collapse([item({ id: 'a', prev_id: 'gone' })]).map((r) => r.items.length)).toEqual([1])
+    const loop = collapse([item({ id: 'a', prev_id: 'b' }), item({ id: 'b', prev_id: 'a' })])
+    expect(loop.map((r) => r.key).sort()).toEqual(['a', 'b'])
   })
 
-  it('keeps follows separate', () => {
-    expect(collapse([item({ id: 'follow:a', type: 'follow' }), item({ id: 'follow:b', type: 'follow', actor_id: 'b' })])).toHaveLength(2)
+  it('calls a reply dealt with once it is answered or liked', () => {
+    expect(handled(item({}))).toBe(false)
+    expect(handled(item({ answered: true }))).toBe(true)
+    expect(handled(item({ liked: true }))).toBe(true)
+    expect(handled(item({ replied_post_id: '9' }))).toBe(true)
   })
 })
 

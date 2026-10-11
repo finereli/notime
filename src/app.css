@@ -18,6 +18,7 @@
 
   --warn: #a8620a;
   --mark: #e0a63c;
+  --heart: #d6336c;
 
   --font-write: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
   --shadow: 0 4px 16px rgba(20, 40, 34, 0.16);
@@ -38,6 +39,7 @@
   --warn: #f9e2af;
   --danger: #f38ba8;
   --ok: #a6e3a1;
+  --heart: #f38ba8;
   --shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   color-scheme: dark;
 }

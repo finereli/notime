@@ -1,10 +1,10 @@
 import { fail, json, type Env } from './env'
 import { appOrigin, isDev } from './dev'
 import { bearer, createSession, deleteSession, validateSession } from './sessions'
-import { NeedsLogin, RefreshRejected, beginLogin, d1TokenStore, exchangeCode, freshToken, refreshGrant, takeVerifier, type TokenSet } from './oauth'
+import { NeedsLogin, RefreshRejected, SCOPES, beginLogin, d1TokenStore, exchangeCode, freshToken, refreshGrant, takeVerifier, type TokenSet } from './oauth'
 import { XError, fakeX, realX, type PostBody, type X, type XUser } from './x'
 import { crcResponse, verifySignature } from './webhook'
-import { backfill, getNotification, getSetting, hydrate, ingestEvent, listNotifications, listOwnPosts, savePosts, setSetting, syncOwnPosts, unreadCount } from './store'
+import { backfill, badge, chainOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { fanOut } from './push'
 import { repair, status } from './setup'
 import { monthToDate } from './usage'
@@ -87,6 +87,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     if (dev) {
       // Local development: skip X entirely and sign in as a stand-in owner.
       await saveAccount(db, await x.me('dev'), { access_token: 'dev', refresh_token: 'dev', expires_in: 10 * 365 * 86400 })
+      await setSetting(db, 'granted_scopes', SCOPES)
       ctx.waitUntil(backfill(env, x, 'dev', '1000').catch(() => {}))
       return Response.redirect(`${origin}/#/signin/${await createSession(db)}`, 302)
     }
@@ -107,6 +108,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     // The whole app runs on the owner's API credit. Nobody else gets in.
     if (me.username.toLowerCase() !== env.OWNER_USERNAME.toLowerCase()) return page('This app is private', `It belongs to @${env.OWNER_USERNAME} and works only with that account.`, 403)
     await saveAccount(db, me, tokens)
+    // Remember what X granted, so the app can say when a newer feature needs
+    // signing in again.
+    await setSetting(db, 'granted_scopes', (tokens as TokenSet & { scope?: string }).scope ?? SCOPES)
     ctx.waitUntil(
       (async () => {
         await repair(env, x, tokens.access_token, origin, me.id).catch((e) => console.error('repair failed', e))
@@ -129,26 +133,31 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   if (!acct) return fail('unauthorized', 401)
   if (acct.needs_login) return fail('x_login_required', 401)
 
-  // Long posts: the owner's choice if they made one, else what X told us.
-  // X is asked once and the answer kept, including "would not say".
-  async function longPosts(): Promise<{ longPosts: boolean; longPostsFrom: 'you' | 'x' | 'unknown' }> {
-    const chosen = await getSetting(db, 'long_posts')
-    if (chosen !== null) return { longPosts: chosen === '1', longPostsFrom: 'you' }
+  // Long posts come with Premium. X is asked once and the answer kept. When
+  // X will not say, the composer lets a long post through and X decides.
+  async function longPosts(): Promise<boolean> {
     let seen = await getSetting(db, 'long_posts_seen')
     if (seen === null) {
       const answer = await x.longPosts(await token()).catch(() => null)
       seen = answer === null ? '?' : answer ? '1' : '0'
       await setSetting(db, 'long_posts_seen', seen)
     }
-    return { longPosts: seen === '1', longPostsFrom: seen === '?' ? 'unknown' : 'x' }
+    return seen !== '0'
+  }
+
+  // Scopes the app asks for now that the stored grant lacks.
+  async function missingScopes(): Promise<string[]> {
+    const granted = new Set(((await getSetting(db, 'granted_scopes')) ?? '').split(/\s+/))
+    return SCOPES.split(' ').filter((s) => !granted.has(s))
   }
 
   if (pathname === '/api/me') {
     return json({
       user: { id: acct.x_user_id, username: acct.username, name: acct.name, avatar: acct.avatar },
       unread: await unreadCount(db),
-      pushAll: (await getSetting(db, 'push_all')) === '1',
-      ...(await longPosts()),
+      unreadDms: await unreadDms(db),
+      longPosts: await longPosts(),
+      missingScopes: await missingScopes(),
     })
   }
 
@@ -168,15 +177,31 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     return json({ added: await backfill(env, x, await token(), acct.x_user_id) })
   }
 
+  const like = pathname.match(/^\/api\/notifications\/(.+)\/like$/)
+  if (like && (method === 'POST' || method === 'DELETE')) {
+    const row = await getNotification(db, decodeURIComponent(like[1]))
+    if (!row?.post_id) return fail('not found', 404)
+    const on = method === 'POST'
+    try {
+      if (on) await x.like(await token(), acct.x_user_id, row.post_id)
+      else await x.unlike(await token(), acct.x_user_id, row.post_id)
+    } catch (e) {
+      if (e instanceof XError && e.status === 403 && (await missingScopes()).includes('like.write')) return fail('needs_scopes', 403)
+      throw e
+    }
+    await db.prepare(`UPDATE notifications SET liked = ?1, read = 1 WHERE id = ?2`).bind(on ? 1 : 0, row.id).run()
+    return json({ liked: on })
+  }
+
   if (pathname.startsWith('/api/notifications/') && method === 'GET') {
     const id = decodeURIComponent(pathname.slice('/api/notifications/'.length))
     let row = await getNotification(db, id)
     if (!row) return fail('not found', 404)
-    if (!row.username || (row.target_post_id && row.target_text == null)) {
+    if (!row.username || (row.target_post_id && (row.target_text == null || row.prev_id == null))) {
       await hydrate(env, x, await token(), row as any)
       row = (await getNotification(db, id))!
     }
-    return json(row)
+    return json({ ...row, chain: await chainOf(db, row) })
   }
 
   // --- posting --------------------------------------------------------------
@@ -209,7 +234,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     if (!body.text && !body.media) return fail('Write something first')
     const post = await x.createPost(await token(), body)
     // Remember what we just said, so the list of past posts costs nothing to keep current.
-    await savePosts(db, [{ id: post.id, text: body.text ?? '', author_id: acct.x_user_id, created_at: new Date().toISOString() }])
+    await savePosts(db, [{ id: post.id, text: body.text ?? '', author_id: acct.x_user_id, created_at: new Date().toISOString(), reply_to: b.reply_to ?? '' }])
     if (b.notification_id) await db.prepare(`UPDATE notifications SET replied_post_id = ?1 WHERE id = ?2`).bind(post.id, b.notification_id).run()
     return json({ id: post.id, url: `https://x.com/${acct.username}/status/${post.id}` })
   }
@@ -239,6 +264,71 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     return json(row)
   }
 
+  // --- direct messages ------------------------------------------------------
+  if (pathname === '/api/dms' && method === 'GET') {
+    // The first visit fills the list from X; after that the webhook keeps it.
+    if ((await getSetting(db, 'dms_synced')) === null) await syncDms(env, x, await token(), acct.x_user_id).catch(() => 0)
+    return json({ items: await listConversations(db), unread: await unreadDms(db) })
+  }
+
+  if (pathname === '/api/dms/sync' && method === 'POST') {
+    try {
+      return json({ added: await syncDms(env, x, await token(), acct.x_user_id) })
+    } catch (e) {
+      if (e instanceof XError && e.status === 403 && (await missingScopes()).some((s) => s.startsWith('dm.'))) return fail('needs_scopes', 403)
+      throw e
+    }
+  }
+
+  if (pathname === '/api/dms/find' && method === 'POST') {
+    const b = (await request.json()) as { username?: string }
+    const name = String(b.username ?? '').trim().replace(/^@/, '')
+    if (!/^\w{1,15}$/.test(name)) return fail('That is not an X username')
+    const known = await db.prepare(`SELECT id, username, name, avatar FROM x_users WHERE lower(username) = lower(?1)`).bind(name).first()
+    if (known) return json(known)
+    const u = await x.findUser(await token(), name)
+    if (!u) return fail(`There is no @${name} on X`, 404)
+    await saveUsers(db, [u])
+    return json({ id: u.id, username: u.username, name: u.name, avatar: u.profile_image_url ?? null })
+  }
+
+  const dm = pathname.match(/^\/api\/dms\/(\d+)(\/read|\/sync)?$/)
+  if (dm) {
+    const partner = dm[1]
+    const who = () => db.prepare(`SELECT id, username, name, avatar FROM x_users WHERE id = ?1`).bind(partner).first()
+    if (dm[2] === '/read' && method === 'POST') {
+      await db.prepare(`UPDATE dms SET read = 1 WHERE partner_id = ?1 AND read = 0`).bind(partner).run()
+      return json({ unread: await unreadDms(db) })
+    }
+    if (dm[2] === '/sync' && method === 'POST') {
+      return json({ added: await syncDms(env, x, await token(), acct.x_user_id, partner) })
+    }
+    if (!dm[2] && method === 'GET') {
+      let user = await who()
+      if (!user) {
+        const u = await x.getUser(await token(), partner).catch(() => null)
+        if (u) await saveUsers(db, [u])
+        user = await who()
+      }
+      return json({ user, items: await listMessages(db, partner) })
+    }
+    if (!dm[2] && method === 'POST') {
+      const b = (await request.json()) as { text?: string }
+      const text = String(b.text ?? '').trim()
+      if (!text) return fail('Write something first')
+      if (text.length > 10000) return fail('Messages stop at 10,000 characters')
+      let m
+      try {
+        m = await x.sendDm(await token(), acct.x_user_id, partner, text)
+      } catch (e) {
+        if (e instanceof XError && e.status === 403 && (await missingScopes()).includes('dm.write')) return fail('needs_scopes', 403)
+        throw e
+      }
+      await saveDm(db, m, acct.x_user_id)
+      return json(m)
+    }
+  }
+
   // --- push -----------------------------------------------------------------
   if (pathname === '/api/push/key') return json({ key: env.VAPID_PUBLIC_KEY })
 
@@ -259,20 +349,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   }
 
   if (pathname === '/api/push/test' && method === 'POST') {
-    return json(await fanOut(db, { title: 'notime', body: 'Notifications work on this device.', tag: 'test', url: '/#/notifications', unread: await unreadCount(db) }, env))
+    return json(await fanOut(db, { title: 'notime', body: 'Notifications work on this device.', tag: 'test', url: '/#/notifications', unread: await badge(db) }, env))
   }
 
-  // --- settings and plumbing ------------------------------------------------
-  if (pathname === '/api/settings' && method === 'PUT') {
-    const s = (await request.json()) as { pushAll?: boolean; longPosts?: boolean }
-    if (typeof s.pushAll === 'boolean') await setSetting(db, 'push_all', s.pushAll ? '1' : '0')
-    if (typeof s.longPosts === 'boolean') await setSetting(db, 'long_posts', s.longPosts ? '1' : '0')
-    return json({ ok: true })
-  }
-
+  // --- plumbing -------------------------------------------------------------
   if (pathname === '/api/setup/status') return json(await status(env, x, await token(), origin))
   if (pathname === '/api/setup/repair' && method === 'POST') return json(await repair(env, x, await token(), origin, acct.x_user_id))
-  if (pathname === '/api/usage') return json(await monthToDate(db))
+  if (pathname === '/api/usage') return json({ ...(await monthToDate(db)), ...(await realSpend(env, x, await token())) })
 
   return fail('not found', 404)
 }

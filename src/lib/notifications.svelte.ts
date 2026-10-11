@@ -57,16 +57,33 @@ class Notifications {
     await apiJson('/api/notifications/read', { method: 'POST' }).catch(() => {})
   }
 
+  // The heart: likes the post on X, and marks the row as dealt with. The
+  // change shows at once and rolls back if X says no.
+  async like(id: string, on: boolean) {
+    const set = (v: boolean) => (this.items = this.items.map((i) => (i.id === id ? { ...i, liked: v, read: 1 } : i)))
+    set(on)
+    try {
+      await apiJson(`/api/notifications/${encodeURIComponent(id)}/like`, { method: on ? 'POST' : 'DELETE' })
+    } catch (e) {
+      set(!on)
+      throw e
+    }
+  }
+
   markReplied(id: string, postId: string) {
     this.items = this.items.map((i) => (i.id === id ? { ...i, replied_post_id: postId } : i))
   }
 
-  setUnread(n: number) {
+  // The app badge counts both: replies waiting and people waiting.
+  setUnread(n: number, messages = this.#messages) {
     this.unread = n
+    this.#messages = messages
+    const total = n + messages
     const nav = navigator as Navigator & { setAppBadge?: (n: number) => Promise<void>; clearAppBadge?: () => Promise<void> }
-    if (n > 0) nav.setAppBadge?.(n).catch(() => {})
+    if (total > 0) nav.setAppBadge?.(total).catch(() => {})
     else nav.clearAppBadge?.().catch(() => {})
   }
+  #messages = 0
 }
 
 export const notifications = new Notifications()

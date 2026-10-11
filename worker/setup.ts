@@ -6,13 +6,14 @@ import { getSetting, setSetting } from './store'
 // Activity subscription per kind of event. Repair is safe to run any number
 // of times. It only creates what is missing.
 
-// Likes are deliberately absent: nothing to do about a like, and each one costs.
+// Only what asks something of the owner. Likes, reposts and follows are
+// deliberately absent: nothing to do about them, and each one costs.
 export const EVENTS: Array<{ type: string; label: string; filter?: Record<string, string> }> = [
   { type: 'post.reply.create', label: 'Replies' },
   { type: 'post.mention.create', label: 'Mentions' },
   { type: 'post.quote.create', label: 'Quotes' },
-  { type: 'post.repost.create', label: 'Reposts' },
-  { type: 'follow.follow', label: 'Follows' },
+  { type: 'dm.received', label: 'Messages received' },
+  { type: 'dm.sent', label: 'Messages you send elsewhere' },
 ]
 
 export const webhookUrl = (origin: string) => origin + '/api/webhook/x'
@@ -72,7 +73,7 @@ export async function repair(env: Env, x: X, token: string, origin: string, owne
 
   if (webhookId) {
     const { subs } = await listSubs(env, x, token)
-    // Drop subscriptions of ours that the app no longer wants (likes, once).
+    // Drop subscriptions of ours that the app no longer wants (likes, reposts, follows).
     for (const s of subs) {
       if (EVENTS.some((e) => e.type === s.event_type) || (s.webhook_id && s.webhook_id !== webhookId)) continue
       try {

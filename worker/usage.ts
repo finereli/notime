@@ -1,6 +1,7 @@
-// A running estimate of what the X API has cost. X bills per resource and
-// dedupes within a UTC day, so this overcounts a little. It is meant to show
-// the order of magnitude, not to reconcile an invoice.
+// A running estimate of what the X API has cost, by kind. X reports only the
+// balance, not what it was spent on, so this is the breakdown under the real
+// number. X bills per resource and dedupes within a UTC day, so it overcounts
+// a little.
 
 export const PRICES: Record<string, number> = {
   post_create: 0.015,
@@ -12,6 +13,11 @@ export const PRICES: Record<string, number> = {
   event_post: 0.005,
   event_like: 0.001,
   event_follow: 0.01,
+  event_dm: 0.01,
+  like: 0.015,
+  unlike: 0.01,
+  dm_read: 0.01,
+  dm_send: 0.015,
 }
 
 export async function bump(db: D1Database, kind: string, n = 1): Promise<void> {
