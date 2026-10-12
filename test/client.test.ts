@@ -3,7 +3,7 @@ import { weightedLength } from '../src/lib/text'
 import { collapse, handled, type Item } from '../src/lib/collapse'
 import * as d from '../src/lib/drafts-core'
 import { ago } from '../src/lib/time'
-import { plain, rich } from '../src/lib/rich'
+import { decode, plain, rich } from '../src/lib/rich'
 
 describe('character count', () => {
   it('counts plain text one per character', () => {
@@ -160,6 +160,12 @@ describe('links in posts', () => {
     const r = rich('see https://t.co/zzz', { quoted: '5', urls: [{ u: 'https://t.co/q', x: 'https://twitter.com/a/status/5', d: '' }] })
     expect(r.parts).toEqual([{ t: 'text', s: 'see ' }, { t: 'link', href: 'https://t.co/zzz', label: 't.co/zzz' }])
     expect(r.quotes).toEqual(['5'])
+  })
+
+  it('undoes the HTML escaping X sends, and only that', () => {
+    expect(decode('salt &amp; pepper &lt;3 &gt; &quot;hi&quot; &#39;x&#39; &#x1F600;')).toBe(`salt & pepper <3 > "hi" 'x' 😀`)
+    expect(decode('&amp;lt; stays one step: &notathing; & alone')).toBe('&lt; stays one step: &notathing; & alone')
+    expect(plain('Q&amp;A at https://t.co/a', { urls: [{ u: 'https://t.co/a', x: 'https://e.com/?a=1&b=2', d: 'e.com/?a=1&b=2' }] })).toBe('Q&A at e.com/?a=1&b=2')
   })
 
   it('flattens to a line, and says what is there when there is no text', () => {

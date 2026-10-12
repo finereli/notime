@@ -210,6 +210,7 @@ describe('events', () => {
     expect(pushText('reply', 'Ana Lima', 'agreed')).toEqual({ title: 'Ana Lima replied', body: 'agreed' })
     expect(pushText('quote', 'Ana Lima', 'this')).toEqual({ title: 'Ana Lima quoted you', body: 'this' })
     expect(pushText('mention', 'Ana Lima', null)).toEqual({ title: 'Ana Lima mentioned you', body: '' })
+    expect(pushText('reply', 'Ana Lima', 'Q&amp;A &lt;3').body).toBe('Q&A <3')
   })
 })
 

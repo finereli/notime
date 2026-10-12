@@ -1,6 +1,6 @@
 import type { Env } from './env'
 import type { X, XPost, XUser } from './x'
-import { cleanPosts, mentionNotification, parseEvent, pushText, type Dm, type Notification } from './events'
+import { cleanPosts, decode, mentionNotification, parseEvent, pushText, type Dm, type Notification } from './events'
 import { fanOut } from './push'
 import { bump } from './usage'
 
@@ -303,7 +303,7 @@ export const unreadDms = async (db: D1Database): Promise<number> =>
 async function pushDm(env: Env, m: Dm): Promise<void> {
   const u = await env.DB.prepare(`SELECT username, name FROM x_users WHERE id = ?1`).bind(m.partner_id).first<{ username: string; name: string }>()
   const who = u?.name || (u?.username ? '@' + u.username : 'Someone')
-  await fanOut(env.DB, { title: who, body: m.text.slice(0, 240), tag: 'dm:' + m.partner_id, url: `/#/m/${m.partner_id}`, unread: await badge(env.DB) }, env)
+  await fanOut(env.DB, { title: who, body: decode(m.text).slice(0, 240), tag: 'dm:' + m.partner_id, url: `/#/m/${m.partner_id}`, unread: await badge(env.DB) }, env)
 }
 
 // One row per person: the latest message and how many are unread.

@@ -14,6 +14,19 @@ export type Part = { t: 'text'; s: string } | { t: 'link'; href: string; label: 
 export interface Rich { parts: Part[]; media: NonNullable<Extra['media']>; quotes: string[] }
 
 const TCO = /https?:\/\/t\.co\/[A-Za-z0-9]+/g
+
+// X sends text HTML-escaped (&amp;, &lt;, &gt;). Svelte escapes on output
+// itself, so the text has to be plain first or "&" shows up as "&amp;".
+const NAMED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' }
+export function decode(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (all, e: string) => {
+    if (e[0] === '#') {
+      const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)
+      return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : all
+    }
+    return NAMED[e.toLowerCase()] ?? all
+  })
+}
 const STATUS = /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/[^/?#]+\/status\/(\d+)(\/(?:photo|video)\/\d+)?/
 
 export function rich(text: string | null | undefined, extra?: Extra | null): Rich {
@@ -22,7 +35,8 @@ export function rich(text: string | null | undefined, extra?: Extra | null): Ric
   const src = text ?? ''
   let at = 0
   // Text next to text (a dropped link between them) is one run.
-  const push = (s: string) => {
+  const push = (raw: string) => {
+    const s = decode(raw)
     if (!s) return
     const prev = parts[parts.length - 1]
     if (prev?.t === 'text') prev.s += s

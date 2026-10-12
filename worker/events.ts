@@ -211,11 +211,20 @@ export function mentionNotification(post: XPost, ownerId: string): Notification 
   return postNotification(isReply ? 'reply' : 'mention', post, ownerId)
 }
 
+// X sends text HTML-escaped. A push is plain text, so undo it.
+export const decode = (s: string) =>
+  s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (all, e: string) => {
+    const named: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+    if (e[0] !== '#') return named[e.toLowerCase()] ?? all
+    const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)
+    return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : all
+  })
+
 export function pushText(type: NotificationType, actor: string, text: string | null): { title: string; body: string } {
   const title = {
     reply: `${actor} replied`,
     mention: `${actor} mentioned you`,
     quote: `${actor} quoted you`,
   }[type]
-  return { title, body: (text ?? '').slice(0, 240) }
+  return { title, body: decode(text ?? '').slice(0, 240) }
 }
