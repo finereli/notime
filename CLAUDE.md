@@ -16,7 +16,11 @@ A personal project. Skip the ceremony.
 notime is focus mode for X: write, see what needs an answer, answer it.
 Anything that is not actionable stays out. Likes and follows appear only as
 cumulative lines (one per post, one for followers) that rise to the top when
-they grow, never one row per like and never a push. No reposts. No settings
+they grow, never one row per like and never a push. Like counts come from the
+posts' own numbers (an owned read), not from like events: a feed of who liked
+what is against the point of the app, and each event is billed. The only
+like events the app takes are the owner's own (outbound), which mark a reply
+as dealt with. No reposts. No settings
 for things the app can work out for itself (like whether the account can
 post long posts).
 
