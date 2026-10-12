@@ -220,7 +220,7 @@ await page.getByLabel('Post text').fill('')
 // --- long posts: no setting; when X will not say, X decides at send time ---
 await page.goto(BASE + '/#/')
 await page.getByLabel('Post text').fill('word '.repeat(70))
-await page.getByText(/a long post/).waitFor()
+await page.getByText('350', { exact: true }).waitFor()
 assert.equal(await page.getByRole('button', { name: 'Post', exact: true }).isDisabled(), false)
 await shot('08e-long-post')
 await page.getByLabel('Post text').fill('')

@@ -3,6 +3,7 @@
   // ones as they arrive and the open screen rereads when a push lands.
   import Avatar from '../components/Avatar.svelte'
   import Icon from '../components/Icon.svelte'
+  import { autosize } from '../lib/autosize'
   import Rich from '../components/Rich.svelte'
   import { apiJson } from '../lib/api'
   import { auth } from '../lib/auth.svelte'
@@ -65,15 +66,6 @@
     saveDmDraft(id, text)
   }
 
-  function grow(node: HTMLTextAreaElement) {
-    const fit = () => {
-      node.style.height = 'auto'
-      node.style.height = Math.min(node.scrollHeight, 180) + 'px'
-    }
-    fit()
-    node.addEventListener('input', fit)
-    return { destroy: () => node.removeEventListener('input', fit) }
-  }
 
   async function send(retry?: Message) {
     const body = retry ? retry.text : text.trim()
@@ -149,7 +141,7 @@
     </div>
 
     <form class="compose" onsubmit={(e) => { e.preventDefault(); send() }}>
-      <textarea aria-label="Message" rows="1" placeholder="Message" bind:value={text} oninput={typed} onkeydown={keydown} use:grow dir="auto"></textarea>
+      <textarea aria-label="Message" rows="1" placeholder="Message" bind:value={text} oninput={typed} onkeydown={keydown} use:autosize={180} dir="auto"></textarea>
       <button class="send" aria-label="Send" disabled={!text.trim()}><Icon name="send" size={20} /></button>
     </form>
   {/if}

@@ -3,6 +3,7 @@
   // in place and tells the drafts store on every change, so there is no save
   // button and nothing to lose.
   import Icon from './Icon.svelte'
+  import { autosize } from '../lib/autosize'
   import { drafts } from '../lib/drafts.svelte'
   import { postIsEmpty, type Draft, type DraftImage } from '../lib/drafts-core'
   import { sendDraft, sending, type ReplyTarget, type Sent } from '../lib/send.svelte'
@@ -62,15 +63,6 @@
     drafts.touch(draft)
   }
 
-  function grow(node: HTMLTextAreaElement) {
-    const fit = () => {
-      node.style.height = 'auto'
-      node.style.height = node.scrollHeight + 'px'
-    }
-    fit()
-    node.addEventListener('input', fit)
-    return { destroy: () => node.removeEventListener('input', fit) }
-  }
 
   async function addFiles(files: Iterable<File>, index = active) {
     const post = draft.posts[index] ?? draft.posts[0]
@@ -158,7 +150,7 @@
       {/if}
 
       <textarea
-        use:grow
+        use:autosize
         bind:value={post.text}
         oninput={changed}
         onfocus={() => (active = i)}
@@ -195,9 +187,9 @@
       {/if}
 
       {#if count > 0 && !post.sentId}
-        <p class="count" class:long={count > LIMIT && count <= limit} class:over={count > limit}>
+        <p class="count" class:over={count > limit}>
           {#if count > limit}{count - limit} over the limit of {limit.toLocaleString()}
-          {:else if count > LIMIT}{count.toLocaleString()}, a long post
+          {:else if count > LIMIT}{count.toLocaleString()}
           {:else}{count} of {LIMIT}{/if}
         </p>
       {/if}
@@ -320,7 +312,6 @@
   .alt-text:focus { border-color: var(--accent); }
 
   .count { align-self: flex-end; font-size: 0.75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-  .count.long { color: var(--warn); }
   .count.over { color: var(--danger); }
 
   .poll { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-raised); }
