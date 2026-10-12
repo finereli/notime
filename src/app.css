@@ -70,3 +70,11 @@ html, body, #app { height: var(--app-h, 100dvh); }
 /* The kit's drawer marks the current row in --accent-deep, which is the top
    bar's colour and close to invisible on a dark surface. */
 .dark .drawer ul button.current { color: var(--accent-light); }
+
+/* The one style for "load more" and its relatives at the end of a list. */
+.load-more {
+  display: block; margin: 16px auto 0; min-height: 44px; padding: 0 22px; border-radius: 22px;
+  border: 1px solid var(--border); background: transparent; color: var(--accent); font-size: 0.9rem;
+}
+.load-more:hover { background: var(--bg-hover); }
+.load-more:disabled { opacity: 0.5; }

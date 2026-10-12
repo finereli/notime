@@ -193,6 +193,9 @@ await page.goto(BASE + '/#/posts')
 await page.getByText('The best feature request').waitFor()
 await page.getByText('Which do you reach for first?').first().waitFor() // posted through the app a moment ago
 await shot('08b-posts')
+// Load more asks X for older posts and goes away once X has none.
+await page.getByRole('button', { name: 'Load more' }).click()
+await page.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
 await page.locator('li', { hasText: 'Most tools get worse' }).getByRole('link', { name: 'Follow up' }).click()
 await page.getByLabel('Post text').fill('A follow-up, a day later: stopping is a feature.')
 await page.getByRole('button', { name: 'Add another post' }).waitFor()

@@ -124,7 +124,7 @@
     {/if}
 
     <div class="messages">
-      <button class="older" onclick={fromX} disabled={fetching}>{fetching ? 'Asking X' : 'Check X for earlier messages'}</button>
+      <button class="load-more older" onclick={fromX} disabled={fetching}>{fetching ? 'Loading' : 'Load earlier messages'}</button>
       {#each messages as m, i (m.id)}
         {@const mine = m.sender_id === me}
         {#if i === 0 || day(m.created_at) !== day(messages[i - 1].created_at)}
@@ -166,8 +166,7 @@
   header a { font-size: 0.8rem; color: var(--text-secondary); text-decoration: none; }
 
   .messages { flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 8px 14px 14px; }
-  .older { align-self: center; min-height: 40px; padding: 0 14px; font-size: 0.8rem; color: var(--accent); }
-  .older:disabled { opacity: 0.5; }
+  .older { align-self: center; margin: 4px auto 8px; }
   .day { align-self: center; margin: 10px 0 4px; font-size: 0.72rem; color: var(--text-secondary); }
 
   .msg { display: flex; flex-direction: column; align-items: flex-start; max-width: 82%; }

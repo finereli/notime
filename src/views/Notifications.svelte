@@ -95,7 +95,7 @@
       {/each}
     </ul>
     {#if notifications.more}
-      <button class="more" onclick={more} disabled={loadingMore}>{loadingMore ? 'Loading' : 'Show earlier'}</button>
+      <button class="load-more" onclick={more} disabled={loadingMore}>{loadingMore ? 'Loading' : 'Load more'}</button>
     {/if}
   {/if}
 </div>
@@ -142,6 +142,5 @@
   .empty { padding: 12vh 18px 0; }
   .empty h2 { font-family: var(--font-write); font-size: 1.5rem; font-weight: 400; margin-bottom: 6px; }
   .wait { display: grid; place-items: center; padding-top: 20vh; }
-  .more { display: block; margin: 12px auto 0; min-height: 44px; padding: 0 18px; color: var(--accent); font-size: 0.9rem; }
   .link { color: var(--accent); text-decoration: underline; }
 </style>

@@ -18,8 +18,11 @@ class Posts {
   more = $state(false)
   syncing = $state(false)
 
+  // Set once X has nothing older to give. Until then there is always more.
+  #exhausted = false
+
   constructor() {
-    auth.onChange(() => { this.items = []; this.loaded = false })
+    auth.onChange(() => { this.items = []; this.loaded = false; this.#exhausted = false })
   }
 
   async load() {
@@ -31,7 +34,7 @@ class Posts {
         page = await apiJson<Page>('/api/posts')
       }
       this.items = page.items
-      this.more = page.more
+      this.more = page.more || !this.#exhausted
       this.loaded = true
       this.failed = false
     } catch {
@@ -45,16 +48,23 @@ class Posts {
     return added
   }
 
-  // Earlier posts: first whatever we already hold, then one more page from X.
+  // Earlier posts: first whatever we already hold, then pages from X. A page
+  // from X can be all replies, which this list leaves out, so keep going
+  // (a few pages at most, two cents each) until something shows.
   async earlier() {
     const last = this.items[this.items.length - 1]
     if (!last) return
-    let page = await apiJson<Page>(`/api/posts?before=${last.id}`)
-    if (!page.items.length) {
-      if (!(await this.#sync(true))) { this.more = false; return }
-      page = await apiJson<Page>(`/api/posts?before=${last.id}`)
+    for (let tries = 0; tries < 5; tries++) {
+      const page = await apiJson<Page>(`/api/posts?before=${last.id}`)
+      if (page.items.length) {
+        this.items = [...this.items, ...page.items]
+        this.more = page.more || !this.#exhausted
+        return
+      }
+      if (this.#exhausted || !(await this.#sync(true))) break
     }
-    this.items = [...this.items, ...page.items]
+    this.#exhausted = true
+    this.more = false
   }
 
   async #sync(older: boolean): Promise<number> {
