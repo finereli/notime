@@ -1,7 +1,8 @@
 import { apiJson } from './api'
 import { auth } from './auth.svelte'
+import type { Extra } from './rich'
 
-export interface OwnPost { id: string; text: string; created_at: string | null }
+export interface OwnPost { id: string; text: string; created_at: string | null; extra?: Extra | null }
 interface Page { items: OwnPost[]; synced: boolean; more: boolean }
 
 // An X id carries its own timestamp. Useful when a cached post came without one.

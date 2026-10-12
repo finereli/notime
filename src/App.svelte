@@ -24,7 +24,7 @@
   import { dms } from './lib/dms.svelte'
   import { notifications } from './lib/notifications.svelte'
   import { posts } from './lib/posts.svelte'
-  import { explain, prefs } from './lib/prefs.svelte'
+  import { prefs } from './lib/prefs.svelte'
   import { router } from './lib/router.svelte'
   import { toasts } from '$shared/lib/toast.svelte'
 
@@ -97,14 +97,6 @@
     setDarkMode(dark)
   }
 
-  async function checkDms() {
-    try {
-      await dms.check()
-    } catch (e) {
-      toasts.error(explain(e, 'Could not check X'))
-    }
-  }
-
   async function check() {
     try {
       await notifications.check()
@@ -126,12 +118,6 @@
       <TopBar leading="back" {title} onleading={() => router.back('/posts')} />
     {:else if view === 'chat'}
       <TopBar leading="back" {title} onleading={() => router.back('/messages')} />
-    {:else if view === 'messages'}
-      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for messages" ontrailing={checkDms}>
-        {#snippet trailing()}
-          <span class:turning={dms.checking}><Icon name="refresh" /></span>
-        {/snippet}
-      </TopBar>
     {:else if view === 'posts'}
       <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for posts made elsewhere" ontrailing={refreshPosts}>
         {#snippet trailing()}

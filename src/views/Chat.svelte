@@ -3,6 +3,7 @@
   // ones as they arrive and the open screen rereads when a push lands.
   import Avatar from '../components/Avatar.svelte'
   import Icon from '../components/Icon.svelte'
+  import Rich from '../components/Rich.svelte'
   import { apiJson } from '../lib/api'
   import { auth } from '../lib/auth.svelte'
   import { displayName } from '../lib/collapse'
@@ -130,7 +131,7 @@
           <p class="day">{day(m.created_at)}</p>
         {/if}
         <div class="msg" class:mine>
-          <p class="bubble" dir="auto">{m.text}</p>
+          <div class="bubble" dir="auto"><Rich text={m.text} extra={m.extra} /></div>
           <p class="meta">
             {#if m.failed}
               <span class="bad">{m.failed}</span> <button class="link" onclick={() => send(m)}>Try again</button>

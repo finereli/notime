@@ -116,15 +116,43 @@ await page.getByText('Ana Lima').first().waitFor()
 await page.getByText('Continues a conversation').waitFor()
 await shot('07-notifications')
 assert.equal(await page.getByText('Sam Okafor').count(), 0, 'reposts never reach the list')
-await page.locator('li', { hasText: 'Lee Park' }).getByText('liked your post').waitFor()
+// Likes are a count per post, read from the post's numbers; like events from
+// others are ignored (each one is billed).
+await page.getByText(/^\d+ likes on your post$/).waitFor()
+assert.equal(await page.getByText('Lee Park').count(), 0, 'no names from like events')
 await page.locator('li', { hasText: 'Mira Chen' }).getByText('followed you').waitFor()
-// A second like on the same post joins the same line.
-await deliver('like.create', { id: 'l2', created_at: new Date().toISOString(), liking_user_id: '6007', liked_tweet_id: '9001', liked_tweet_author_id: '1000' }, { users: [{ id: '6007', username: 'jo', name: 'Jo March' }] })
-await page.getByRole('button', { name: 'Check X for missed mentions' }).click()
-await page.getByText('Jo March and Lee Park').waitFor()
-assert.equal(await page.getByText('liked your post').count(), 1, 'one line per post')
 assert.equal(await page.getByText('Books are how I learn').count(), 0, 'the earlier reply folds into the newer one')
 assert.ok(await page.getByText('I am really missing the user-first angle').count(), 'a long reply shows whole')
+
+// --- links: the address, the image, and a post linked to as a card ---
+await deliver('post.mention.create', {
+  id: '7301', author_id: '2001', created_at: new Date().toISOString(),
+  text: '@finereli this goes with https://t.co/aaa and https://t.co/bbb https://t.co/ccc',
+  entities: { urls: [
+    { url: 'https://t.co/aaa', expanded_url: 'https://example.com/small-tools', display_url: 'example.com/small-tools' },
+    { url: 'https://t.co/bbb', expanded_url: 'https://x.com/ana_writes/status/5501', display_url: 'x.com/ana_writes/sta…' },
+    { url: 'https://t.co/ccc', expanded_url: 'https://x.com/ana_writes/status/7301/photo/1', display_url: 'pic.x.com/ccc', media_key: '3_9' },
+  ] },
+  attachments: { media_keys: ['3_9'] },
+}, { users: [{ id: '2001', username: 'ana_writes', name: 'Ana Lima' }], media: [{ media_key: '3_9', type: 'photo', url: '/icons/icon-512.png' }] })
+await page.getByRole('button', { name: 'Check X for missed mentions' }).click()
+const linkRow = page.locator('li', { hasText: 'this goes with' })
+await linkRow.getByText('example.com/small-tools').waitFor()
+assert.equal(await linkRow.getByText('t.co').count(), 0, 'no t.co in sight')
+await linkRow.locator('img').waitFor()
+await linkRow.getByText('Quoting a post').waitFor()
+await linkRow.getByText('this goes with').click()
+await page.getByRole('link', { name: 'example.com/small-tools' }).waitFor()
+await page.getByText('Small tools win because they finish.').waitFor()
+await shot('07d-links')
+await page.getByText('Small tools win because they finish.').click()
+await page.getByRole('tab', { name: 'Reply' }).waitFor()
+await page.getByText('@ana_writes').first().waitFor()
+await page.getByLabel('Post text').fill('Agreed, finishing is the feature.')
+await page.getByRole('button', { name: 'Reply', exact: true }).click()
+await page.getByText('Replied.').waitFor()
+await page.goto(BASE + '/#/notifications')
+await page.getByText('Continues a conversation').waitFor()
 
 // --- the conversation, then a like ---
 await page.getByText('Continues a conversation').click()
@@ -172,7 +200,8 @@ await shot('08c-follow-up')
 await page.getByRole('button', { name: 'Post', exact: true }).click()
 await page.getByText('Posted.').waitFor()
 await page.getByRole('button', { name: 'Back' }).click()
-await page.getByText('A follow-up, a day later').first().waitFor()
+await page.getByText('The best feature request').waitFor()
+assert.equal(await page.getByText('A follow-up, a day later').count(), 0, 'Posts lists top-level posts only, not replies')
 
 await page.locator('li', { hasText: 'The best feature request' }).getByRole('link', { name: 'Quote' }).click()
 await page.getByLabel('Post text').fill('Still true.')

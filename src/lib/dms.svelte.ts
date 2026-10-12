@@ -1,20 +1,21 @@
 import { apiJson } from './api'
 import { auth } from './auth.svelte'
 import { notifications } from './notifications.svelte'
+import type { Extra } from './rich'
 
 export interface Person { id: string; username: string | null; name: string | null; avatar: string | null }
-export interface Conversation extends Omit<Person, 'id'> { partner_id: string; text: string; sender_id: string; created_at: string; unread: number }
-export interface Message { id: string; sender_id: string; text: string; created_at: string; pending?: boolean; failed?: string }
+export interface Conversation extends Omit<Person, 'id'> { partner_id: string; text: string; sender_id: string; created_at: string; unread: number; extra?: Extra | null }
+export interface Message { id: string; sender_id: string; text: string; created_at: string; extra?: Extra | null; pending?: boolean; failed?: string }
 
-// Direct messages. Like notifications, the lists are read from our own
-// database, which X's webhook keeps current, so opening them is free. Asking
-// X directly costs a cent a message and happens only on request.
+// Direct messages. The lists are read from our own database, which X's
+// webhook keeps current, so opening them is free. Asking X directly costs a
+// cent a message: it happens once to fill the list, and inside a
+// conversation only when asked for earlier messages.
 class Dms {
   items = $state<Conversation[]>([])
   unread = $state(0)
   loaded = $state(false)
   failed = $state(false)
-  checking = $state(false)
   // Bumped on every load, so an open conversation knows to reread itself.
   tick = $state(0)
 
@@ -33,17 +34,6 @@ class Dms {
       this.tick++
     } catch {
       this.failed = !this.loaded
-    }
-  }
-
-  async check(): Promise<number> {
-    this.checking = true
-    try {
-      const { added } = await apiJson<{ added: number }>('/api/dms/sync', { method: 'POST' })
-      await this.load()
-      return added
-    } finally {
-      this.checking = false
     }
   }
 

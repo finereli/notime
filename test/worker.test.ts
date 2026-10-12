@@ -125,11 +125,33 @@ describe('events', () => {
     expect(mine.liked).toBe('51')
     expect(mine.billed).toBe('event_like')
     const theirs = parseEvent(env('like.create', { id: 'l3', created_at: '2026-10-11T09:30:00.000Z', liking_user_id: '2001', liked_tweet_id: '40', liked_tweet_author_id: OWNER }), OWNER)
+    // Likes by others are counted from the posts' numbers, not from events.
     expect(theirs.liked).toBeNull()
-    expect(theirs.activity).toEqual({ kind: 'like', post_id: '40', actor_id: '2001', at: '2026-10-11T09:30:00.000Z' })
+    expect(theirs.activity).toBeNull()
     expect(theirs.notification).toBeNull()
-    // A like between two other people is none of our business.
-    expect(parseEvent(env('like.create', { liking_user_id: '2001', liked_tweet_id: '41', liked_tweet_author_id: '3003' }), OWNER).activity).toBeNull()
+  })
+
+  it('reads where t.co links go, the images, and the quoted post', () => {
+    const post = {
+      id: '70', text: 'look https://t.co/a and https://t.co/b https://t.co/c', author_id: '2001',
+      entities: { urls: [
+        { url: 'https://t.co/a', expanded_url: 'https://example.com/long/path', display_url: 'example.com/long/…' },
+        { url: 'https://t.co/b', expanded_url: 'https://x.com/sam/status/99', display_url: 'x.com/sam/status/99' },
+        { url: 'https://t.co/c', expanded_url: 'https://x.com/ana/status/70/photo/1', display_url: 'pic.x.com/c', media_key: '3_1' },
+      ] },
+      attachments: { media_keys: ['3_1'] },
+      referenced_tweets: [{ type: 'quoted', id: '99' }],
+    }
+    const p = parseEvent(env('post.mention.create', post, { media: [{ media_key: '3_1', type: 'photo', url: 'https://pbs.twimg.com/media/x.jpg', alt_text: 'a chart', width: 800, height: 600 }] }), OWNER)
+    expect(p.posts.find((x) => x.id === '70')!.extra).toEqual({
+      urls: [
+        { u: 'https://t.co/a', x: 'https://example.com/long/path', d: 'example.com/long/…' },
+        { u: 'https://t.co/b', x: 'https://x.com/sam/status/99', d: 'x.com/sam/status/99' },
+        { u: 'https://t.co/c', x: 'https://x.com/ana/status/70/photo/1', d: 'pic.x.com/c', m: 1 },
+      ],
+      media: [{ type: 'photo', url: 'https://pbs.twimg.com/media/x.jpg', alt: 'a chart', w: 800, h: 600 }],
+      quoted: '99',
+    })
   })
 
   it('counts a follow toward the followers line, never as a notification', () => {

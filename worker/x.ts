@@ -1,6 +1,6 @@
 import type { Env } from './env'
 import { bump, hasUrl } from './usage'
-import { cleanPosts, parseDm, type Dm } from './events'
+import { cleanPosts, parseDm, type Dm, type Extra } from './events'
 
 // Everything we ask of X goes through this interface, so local development
 // and the tests can run against a fake that costs nothing and posts nothing.
@@ -15,6 +15,7 @@ export interface XPost {
   referenced_tweets?: Array<{ type: string; id: string }>
   // The post this one answers: '' for none, undefined when unknown.
   reply_to?: string
+  extra?: Extra
 }
 export interface PostBody {
   text?: string
@@ -42,7 +43,8 @@ export interface X {
   // Whether the account may post past 280 characters. null when X will not say.
   longPosts(token: string): Promise<boolean | null>
   getUser(token: string, id: string): Promise<XUser | null>
-  getPost(token: string, id: string): Promise<XPost | null>
+  // Any post, with its author when X sends one.
+  getPost(token: string, id: string): Promise<(XPost & { author?: XUser }) | null>
   createPost(token: string, body: PostBody): Promise<{ id: string; text: string }>
   uploadMedia(token: string, file: Blob): Promise<string>
   setAltText(token: string, mediaId: string, text: string): Promise<void>
@@ -55,6 +57,8 @@ export interface X {
   createSubscription(token: string, body: Record<string, unknown>): Promise<void>
   deleteSubscription(token: string, id: string): Promise<void>
   like(token: string, userId: string, postId: string): Promise<void>
+  // The owner's latest top-level posts with their like counts. An owned read.
+  myStats(token: string, userId: string): Promise<{ posts: XPost[]; likes: Record<string, number> }>
   // The ids of the owner's most recent likes.
   likedPosts(token: string, userId: string): Promise<string[]>
   unlike(token: string, userId: string, postId: string): Promise<void>
@@ -95,10 +99,12 @@ export function problemDetail(data: any): string {
 }
 
 const USER_FIELDS = 'user.fields=profile_image_url,name,username'
-const POST_FIELDS = 'created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,note_tweet'
+const POST_FIELDS = 'created_at,author_id,conversation_id,in_reply_to_user_id,referenced_tweets,note_tweet,entities,attachments'
+// Images come free with the post when asked for: the URLs, not the bytes.
+const MEDIA = { expansions: 'attachments.media_keys', 'media.fields': 'url,preview_image_url,type,alt_text,width,height' }
 const DM_QUERY = {
   event_types: 'MessageCreate',
-  'dm_event.fields': 'id,text,event_type,created_at,sender_id,dm_conversation_id,participant_ids',
+  'dm_event.fields': 'id,text,event_type,created_at,sender_id,dm_conversation_id,participant_ids,entities,referenced_tweets',
   expansions: 'sender_id,participant_ids',
   'user.fields': 'profile_image_url,name,username',
 }
@@ -128,9 +134,12 @@ export function realX(env: Env): X {
       return r?.data ?? null
     },
     async getPost(token, id) {
-      const r = await call('GET', `/2/tweets/${id}?tweet.fields=${POST_FIELDS}`, token)
+      const q = new URLSearchParams({ 'tweet.fields': POST_FIELDS, ...MEDIA, expansions: 'author_id,attachments.media_keys', 'user.fields': 'profile_image_url,name,username' })
+      const r = await call('GET', `/2/tweets/${id}?${q}`, token)
       await bump(db, 'post_read')
-      return cleanPosts([r?.data])[0] ?? null
+      const post = cleanPosts([r?.data], r?.includes?.media)[0] ?? null
+      const author = r?.includes?.users?.[0]
+      return post && author ? { ...post, author } : post
     },
     async createPost(token, body) {
       const r = await call('POST', '/2/tweets', token, body as Record<string, unknown>)
@@ -151,25 +160,27 @@ export function realX(env: Env): X {
     async mentions(token, userId, sinceId) {
       const q = new URLSearchParams({
         max_results: sinceId ? '100' : '20',
-        expansions: 'author_id,referenced_tweets.id',
+        ...MEDIA,
+        expansions: 'author_id,referenced_tweets.id,attachments.media_keys',
         'tweet.fields': POST_FIELDS,
         'user.fields': 'profile_image_url,name,username',
       })
       if (sinceId) q.set('since_id', sinceId)
       const r = await call('GET', `/2/users/${userId}/mentions?${q}`, token)
-      // Keep the raw shape (referenced_tweets and all) and the full text.
-      const posts: XPost[] = (r?.data ?? []).map((p: any) => ({ ...p, text: p.note_tweet?.text ?? p.text }))
+      // Keep the raw shape (referenced_tweets and all), the full text, and the extras.
+      const media = r?.includes?.media ?? []
+      const posts: XPost[] = (r?.data ?? []).map((p: any) => ({ ...p, text: p.note_tweet?.text ?? p.text, extra: cleanPosts([p], media)[0]?.extra }))
       await bump(db, 'owned_read', posts.length)
-      return { posts, users: r?.includes?.users ?? [], parents: cleanPosts(r?.includes?.tweets), newestId: r?.meta?.newest_id }
+      return { posts, users: r?.includes?.users ?? [], parents: cleanPosts(r?.includes?.tweets, media), newestId: r?.meta?.newest_id }
     },
     async myPosts(token, userId, range) {
       // The owner's own timeline is an owned read too. Reposts are left out:
       // they are someone else's words.
-      const q = new URLSearchParams({ max_results: range.sinceId ? '100' : '20', exclude: 'retweets', 'tweet.fields': POST_FIELDS })
+      const q = new URLSearchParams({ max_results: range.sinceId ? '100' : '20', exclude: 'retweets', 'tweet.fields': POST_FIELDS, ...MEDIA })
       if (range.sinceId) q.set('since_id', range.sinceId)
       if (range.untilId) q.set('until_id', range.untilId)
       const r = await call('GET', `/2/users/${userId}/tweets?${q}`, token)
-      const posts: XPost[] = cleanPosts(r?.data).map((p) => ({ ...p, author_id: userId }))
+      const posts: XPost[] = cleanPosts(r?.data, r?.includes?.media).map((p) => ({ ...p, author_id: userId }))
       await bump(db, 'owned_read', posts.length)
       return { posts, oldestId: r?.meta?.oldest_id }
     },
@@ -199,6 +210,14 @@ export function realX(env: Env): X {
     async unlike(token, userId, postId) {
       await call('DELETE', `/2/users/${userId}/likes/${postId}`, token)
       await bump(db, 'unlike')
+    },
+    async myStats(token, userId) {
+      const q = new URLSearchParams({ max_results: '10', exclude: 'retweets,replies', 'tweet.fields': POST_FIELDS + ',public_metrics', ...MEDIA })
+      const r = await call('GET', `/2/users/${userId}/tweets?${q}`, token)
+      const data: any[] = r?.data ?? []
+      await bump(db, 'owned_read', data.length)
+      const likes = Object.fromEntries(data.map((p) => [String(p.id), Number(p.public_metrics?.like_count ?? 0)]))
+      return { posts: cleanPosts(data, r?.includes?.media).map((p) => ({ ...p, author_id: userId })), likes }
     },
     async likedPosts(token, userId) {
       const r = await call('GET', `/2/users/${userId}/liked_tweets?max_results=100`, token)
@@ -248,7 +267,17 @@ export function fakeX(env: Env): X {
     async me() { return owner },
     async longPosts() { return null },
     async getUser(_t, uid) { return { id: uid, username: 'user' + uid, name: 'User ' + uid } },
-    async getPost(_t, pid) { return { id: pid, text: 'An earlier post of yours, fetched on demand.', author_id: owner.id, created_at: new Date().toISOString() } },
+    async getPost(_t, pid) {
+      // Ids starting 55 are someone else's posts, the kind a link points at.
+      if (pid.startsWith('55')) {
+        return {
+          id: pid, author_id: ana.id, author: ana, created_at: new Date().toISOString(), reply_to: '',
+          text: 'Small tools win because they finish. https://t.co/pic55',
+          extra: { urls: [{ u: 'https://t.co/pic55', x: `https://x.com/ana_writes/status/${pid}/photo/1`, d: 'pic.x.com/pic55', m: 1 }], media: [{ type: 'photo', url: '/icons/icon-192.png' }] },
+        }
+      }
+      return { id: pid, text: 'An earlier post of yours, fetched on demand.', author_id: owner.id, created_at: new Date().toISOString() }
+    },
     async createPost(_t, body) {
       if ((body.text || '').includes('#fail')) throw new XError(403, 'You are not permitted to perform this action.')
       if (body.quote_tweet_id && !(body.text || '').includes('#quoteok')) throw new XError(403, 'Quote posts are not available on your current plan.')
@@ -290,6 +319,10 @@ export function fakeX(env: Env): X {
     },
     async unlike() {},
     async likedPosts() { return [] },
+    async myStats(_t, userId) {
+      const now = new Date().toISOString()
+      return { posts: [{ id: '9001', text: 'Most tools get worse as they get bigger. The trick is to notice when to stop.', author_id: userId, created_at: now, reply_to: '' }], likes: { '9001': 2 + Math.floor(Date.now() / 60000) % 3 } }
+    },
     async dms(_t, ownerId, { partnerId, next }) {
       if (next) return { dms: [], users: [] }
       const now = Date.now()

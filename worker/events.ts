@@ -23,6 +23,7 @@ export interface Dm {
   sender_id: string
   text: string
   created_at: string
+  extra?: Extra
 }
 
 export interface Activity { kind: 'like' | 'follow'; post_id: string; actor_id: string; at: string }
@@ -60,16 +61,47 @@ export function replyTo(post: any): string | undefined {
   return Array.isArray(post?.referenced_tweets) || post?.conversation_id === post?.id ? '' : undefined
 }
 
+// What a post's t.co links stand for, and what it carries. Built from the
+// entities and media X sends alongside the text, so showing it costs nothing.
+export interface Extra {
+  // u: the t.co link in the text; x: where it goes; d: how X displays it;
+  // m: set when the link is the post's own media (the text drops it).
+  urls?: Array<{ u: string; x: string; d: string; m?: 1 }>
+  media?: Array<{ type: string; url: string; alt?: string; w?: number; h?: number }>
+  quoted?: string
+}
+
+export function extraOf(p: any, media: any[] = []): Extra | undefined {
+  const out: Extra = {}
+  const ents = p?.note_tweet?.entities?.urls ?? p?.entities?.urls ?? p?.message_create?.message_data?.entities?.urls
+  if (Array.isArray(ents)) {
+    const urls = ents
+      .filter((e: any) => e?.url && (e.expanded_url || e.unwound_url))
+      .map((e: any) => ({ u: String(e.url), x: String(e.unwound_url ?? e.expanded_url), d: String(e.display_url ?? e.expanded_url), ...(e.media_key ? { m: 1 as const } : {}) }))
+    if (urls.length) out.urls = urls
+  }
+  const keys: string[] = Array.isArray(p?.attachments?.media_keys) ? p.attachments.media_keys.map(String) : []
+  const found = keys
+    .map((k) => (Array.isArray(media) ? media : []).find((m: any) => m?.media_key === k))
+    .filter(Boolean)
+    .map((m: any) => ({ type: String(m.type), url: String(m.url ?? m.preview_image_url ?? ''), alt: m.alt_text || undefined, w: m.width, h: m.height }))
+    .filter((m) => m.url)
+  if (found.length) out.media = found
+  const quoted = ref(p, 'quoted')
+  if (quoted) out.quoted = String(quoted)
+  return Object.keys(out).length ? out : undefined
+}
+
 function cleanUsers(list: unknown): XUser[] {
   return (Array.isArray(list) ? list : [])
     .filter((u: any) => u && u.id && u.username)
     .map((u: any) => ({ id: String(u.id), username: u.username, name: u.name || u.username, profile_image_url: u.profile_image_url }))
 }
 
-export function cleanPosts(list: unknown): XPost[] {
+export function cleanPosts(list: unknown, media: any[] = []): XPost[] {
   return (Array.isArray(list) ? list : [])
     .filter((p: any) => p && p.id && typeof p.text === 'string')
-    .map((p: any) => ({ id: String(p.id), text: fullText(p)!, author_id: p.author_id ? String(p.author_id) : undefined, created_at: p.created_at, reply_to: replyTo(p) }))
+    .map((p: any) => ({ id: String(p.id), text: fullText(p)!, author_id: p.author_id ? String(p.author_id) : undefined, created_at: p.created_at, reply_to: replyTo(p), extra: extraOf(p, media) }))
 }
 
 export function postNotification(type: NotificationType, post: any, ownerId: string): Notification | null {
@@ -119,7 +151,8 @@ export function parseDm(ev: any, ownerId: string): Dm | null {
   // Group conversations are left out: the app only does one-to-one.
   const conv = ev.dm_conversation_id ? String(ev.dm_conversation_id) : null
   if (!partner || (conv && !/^\d+-\d+$/.test(conv))) return null
-  return { id: String(ev.id), conversation_id: conv, partner_id: partner, sender_id: String(sender), text, created_at: iso(ev.created_at ?? ev.created_timestamp) }
+  const extra = extraOf(ev)
+  return { id: String(ev.id), conversation_id: conv, partner_id: partner, sender_id: String(sender), text, created_at: iso(ev.created_at ?? ev.created_timestamp), ...(extra ? { extra } : {}) }
 }
 
 // Never throws: X warns that fields come and go, and one odd payload must not
@@ -130,21 +163,21 @@ export function parseEvent(event: any, ownerId: string): Parsed {
     const type: string = event?.event_type ?? ''
     const payload = event?.payload ?? {}
     out.users = cleanUsers(event?.includes?.users)
-    out.posts = cleanPosts(event?.includes?.tweets)
+    const media = Array.isArray(event?.includes?.media) ? event.includes.media : []
+    out.posts = cleanPosts(event?.includes?.tweets, media)
 
     if (POST_EVENTS[type]) {
       out.billed = 'event_post'
       out.notification = postNotification(POST_EVENTS[type], payload, ownerId)
       // The post itself is worth keeping too: a later reply may answer it.
-      out.posts.push(...cleanPosts([payload]))
+      out.posts.push(...cleanPosts([payload], media))
     } else if (type === 'like.create') {
       out.billed = 'event_like'
       const liker = String(payload?.liking_user_id ?? '')
       const post = payload?.liked_tweet_id ? String(payload.liked_tweet_id) : ''
-      // The owner's own like marks a reply as dealt with. Someone else's like
-      // on the owner's post adds to that post's one cumulative line.
+      // The owner's own like marks a reply as dealt with. Likes by others are
+      // counted from the posts' numbers instead; a stray one is ignored.
       if (liker === ownerId && post) out.liked = post
-      else if (liker && post && String(payload?.liked_tweet_author_id ?? '') === ownerId) out.activity = { kind: 'like', post_id: post, actor_id: liker, at: iso(payload.created_at ?? event?.created_at) }
     } else if (type === 'follow.follow') {
       out.billed = 'event_follow'
       const source = payload?.source?.data ?? payload?.source

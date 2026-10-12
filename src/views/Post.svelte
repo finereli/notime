@@ -1,9 +1,14 @@
 <script lang="ts">
-  // One of your own posts, with a box to add to it: a follow-up (a reply to
-  // yourself, which X shows as a thread) or a quote.
+  // One post, with a box to add to it. Your own (from Posts): a follow-up, a
+  // reply to yourself that X shows as a thread, or a quote. Someone else's
+  // (only ever reached by tapping a post that another one links to): a reply
+  // or a quote.
+  import Avatar from '../components/Avatar.svelte'
   import Composer from '../components/Composer.svelte'
   import Icon from '../components/Icon.svelte'
-  import { apiJson } from '../lib/api'
+  import Rich from '../components/Rich.svelte'
+  import { displayName } from '../lib/collapse'
+  import { lookPost, type LinkedPost } from '../lib/linked'
   import { auth } from '../lib/auth.svelte'
   import { drafts } from '../lib/drafts.svelte'
   import { isEmpty, replyId } from '../lib/drafts-core'
@@ -18,16 +23,20 @@
   // svelte-ignore state_referenced_locally
   const key = (quote ? 'quote:' : 'own:') + id
   // svelte-ignore state_referenced_locally
-  let post = $state<OwnPost | null>(posts.items.find((p) => p.id === id) ?? null)
+  const cached = posts.items.find((p) => p.id === id)
+  let post = $state<(OwnPost & Partial<LinkedPost>) | null>(cached ? { ...cached, author_id: auth.user?.id ?? null } : null)
   let missing = $state(false)
   let sent = $state<Sent | null>(null)
 
   // svelte-ignore state_referenced_locally
-  if (!post) apiJson<OwnPost>(`/api/posts/${id}`).then((p) => (post = p)).catch(() => (missing = true))
+  if (!post) lookPost(id).then((p) => (post = p)).catch(() => (missing = true))
+
+  const mine = $derived(!!post && post.author_id === auth.user?.id)
+  const base = $derived(mine ? `#/p/${id}` : `#/t/${id}`)
 
   drafts.reply(key)
   const draft = $derived(drafts.state.drafts[replyId(key)])
-  const url = $derived(`https://x.com/${auth.user?.username ?? 'i'}/status/${id}`)
+  const url = $derived(`https://x.com/${(mine ? auth.user?.username : post?.username) ?? 'i'}/status/${id}`)
 
   function done(result: Sent) {
     sent = result
@@ -58,7 +67,10 @@
 <div class="page">
   {#if post}
     <article>
-      <p class="text" dir="auto">{post.text}</p>
+      {#if !mine}
+        <p class="who"><Avatar src={post.avatar ?? null} name={displayName({ name: post.name ?? null, username: post.username ?? null })} size={28} /><strong>{displayName({ name: post.name ?? null, username: post.username ?? null })}</strong>{#if post.username}<span>@{post.username}</span>{/if}</p>
+      {/if}
+      <p class="text" dir="auto"><Rich text={post.text} extra={post.extra} /></p>
       <p class="meta">
         <time>{ago(postTime(post))}</time>
         <a href={url} target="_blank" rel="noopener">Open on X <Icon name="open_in_new" size={14} /></a>
@@ -66,15 +78,15 @@
     </article>
 
     {#if sent}
-      <p class="sent"><Icon name="check_circle" size={20} /> {quote ? 'Quoted.' : 'Posted.'} <a href={sent.url} target="_blank" rel="noopener">Open on X</a></p>
-      <p><button class="link" onclick={() => router.go(`/p/${sent!.ids[sent!.ids.length - 1]}`)}>Follow up on that one</button></p>
+      <p class="sent"><Icon name="check_circle" size={20} /> {quote ? 'Quoted.' : mine ? 'Posted.' : 'Replied.'} <a href={sent.url} target="_blank" rel="noopener">Open on X</a></p>
+      <p><button class="link" onclick={() => router.go(`/p/${sent!.ids[sent!.ids.length - 1]}`)}>Follow up on yours</button></p>
     {:else if draft}
       <div class="tabs" role="tablist">
-        <a role="tab" aria-selected={!quote} class:on={!quote} href={`#/p/${id}`}>Follow up</a>
-        <a role="tab" aria-selected={quote} class:on={quote} href={`#/p/${id}/quote`}>Quote</a>
+        <a role="tab" aria-selected={!quote} class:on={!quote} href={base}>{mine ? 'Follow up' : 'Reply'}</a>
+        <a role="tab" aria-selected={quote} class:on={quote} href={`${base}/quote`}>Quote</a>
       </div>
       <div class="box">
-        <Composer {draft} reply={{ postId: id, quote }} placeholder={quote ? 'Say something about it' : 'And another thing'} onsent={done} />
+        <Composer {draft} reply={{ postId: id, quote, other: !mine }} placeholder={quote ? 'Say something about it' : mine ? 'And another thing' : `Reply to ${displayName({ name: post.name ?? null, username: post.username ?? null })}`} onsent={done} />
       </div>
       {#if quote}
         <p class="quiet note">
@@ -89,7 +101,7 @@
       {/if}
     {/if}
   {:else if missing}
-    <p class="quiet">That post is not one of yours, or it is gone. <a href="#/posts">Back to your posts</a></p>
+    <p class="quiet">That post is gone, or X would not show it. <a href="#/posts">Back to your posts</a></p>
   {:else}
     <div class="wait"><span class="spinner"></span></div>
   {/if}
@@ -97,6 +109,8 @@
 
 <style>
   article { padding-inline-start: 12px; border-inline-start: 2px solid var(--accent-light); }
+  .who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-secondary); min-width: 0; }
+  .who strong { font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .text { font-size: 1.05rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
   .meta { display: flex; align-items: center; gap: 16px; margin-top: 6px; font-size: 0.8rem; color: var(--text-secondary); }
   .meta a { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; color: inherit; text-decoration: none; }

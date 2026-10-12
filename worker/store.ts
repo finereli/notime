@@ -32,11 +32,12 @@ export async function savePosts(db: D1Database, posts: XPost[]): Promise<void> {
       db
         // Later sightings can only add to what we know: the full text of a
         // long post, or what the post was answering.
-        .prepare(`INSERT INTO x_posts (id, author_id, text, created_at, reply_to) VALUES (?1, ?2, ?3, ?4, ?5)
+        .prepare(`INSERT INTO x_posts (id, author_id, text, created_at, reply_to, extra) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                   ON CONFLICT(id) DO UPDATE SET
                     text = CASE WHEN length(?3) > length(COALESCE(text, '')) THEN ?3 ELSE text END,
-                    author_id = COALESCE(author_id, ?2), created_at = COALESCE(created_at, ?4), reply_to = COALESCE(reply_to, ?5)`)
-        .bind(p.id, p.author_id ?? null, p.text, p.created_at ?? null, p.reply_to ?? null),
+                    author_id = COALESCE(author_id, ?2), created_at = COALESCE(created_at, ?4), reply_to = COALESCE(reply_to, ?5),
+                    extra = COALESCE(?6, extra)`)
+        .bind(p.id, p.author_id ?? null, p.text, p.created_at ?? null, p.reply_to ?? null, p.extra ? JSON.stringify(p.extra) : null),
     ),
   )
 }
@@ -62,6 +63,7 @@ export const unreadCount = async (db: D1Database): Promise<number> =>
 const LIST_SQL = `
   SELECT n.id, n.type, n.actor_id, n.post_id, n.target_post_id, n.text, n.created_at, n.read, n.replied_post_id, n.liked,
          u.username, u.name, u.avatar, p.text AS target_text,
+         (SELECT x.extra FROM x_posts x WHERE x.id = n.post_id) AS extra, p.extra AS target_extra,
          (SELECT m.id FROM notifications m WHERE m.post_id = p.reply_to AND p.reply_to != '' LIMIT 1) AS prev_id,
          (n.replied_post_id IS NOT NULL OR EXISTS (SELECT 1 FROM x_posts o WHERE o.reply_to = n.post_id AND o.author_id = (SELECT x_user_id FROM account WHERE id = 1))) AS answered
   FROM notifications n
@@ -80,13 +82,39 @@ export async function listNotifications(db: D1Database, before: string | null, l
   return { items: merged.slice(0, limit), more: results.length === limit || merged.length > limit }
 }
 
-// One line per liked post and one for followers: the count, the latest two
-// names, and the time of the latest, which is what moves the line up.
+// Like counts for the owner's latest posts, read from X at most every half
+// hour, and only when someone is looking. A tenth of a cent per post, and X
+// charges a post once per UTC day, so about a cent a day however many likes
+// arrive. Billed like events cost that per like.
+export async function syncStats(env: Env, x: X, token: string, ownerId: string, force = false) {
+  const db = env.DB
+  const last = await getSetting(db, 'stats_at')
+  if (!force && last && Date.now() - Date.parse(last) < 30 * 60_000) return
+  await setSetting(db, 'stats_at', new Date().toISOString())
+  const { posts, likes } = await x.myStats(token, ownerId)
+  await savePosts(db, posts)
+  const now = new Date().toISOString()
+  // A post seen for the first time sits at its own time, not at the top.
+  await db.batch(
+    posts.map((p) =>
+      db
+        .prepare(`INSERT INTO post_stats (post_id, likes, changed_at) VALUES (?1, ?2, ?3)
+                  ON CONFLICT(post_id) DO UPDATE SET changed_at = CASE WHEN ?2 > likes THEN ?4 ELSE changed_at END, likes = ?2`)
+        .bind(p.id, likes[p.id] ?? 0, p.created_at ?? now, now),
+    ),
+  )
+}
+
+// One line per liked post (its count) and one for followers (the count and
+// the latest two names), each placed by when it last grew.
 async function activityLines(db: D1Database, before: string | null, limit: number) {
   const seen = (await getSetting(db, 'activity_seen_at')) ?? ''
   const { results: groups } = await db
-    .prepare(`SELECT kind, post_id, COUNT(*) AS n, MAX(at) AS at FROM activity GROUP BY kind, post_id
-              HAVING ?1 IS NULL OR MAX(at) < ?1 ORDER BY at DESC LIMIT ?2`)
+    .prepare(`SELECT 'follow' AS kind, '' AS post_id, COUNT(*) AS n, MAX(at) AS at FROM activity WHERE kind = 'follow'
+              HAVING COUNT(*) > 0 AND (?1 IS NULL OR MAX(at) < ?1)
+              UNION ALL
+              SELECT 'like', post_id, likes, changed_at FROM post_stats WHERE likes > 0 AND (?1 IS NULL OR changed_at < ?1)
+              ORDER BY at DESC LIMIT ?2`)
     .bind(before, limit)
     .all<{ kind: string; post_id: string; n: number; at: string }>()
   if (!groups.length) return []
@@ -98,7 +126,7 @@ async function activityLines(db: D1Database, before: string | null, limit: numbe
         .bind(g.kind, g.post_id),
     ),
   )
-  const posts = await db.batch(groups.map((g) => db.prepare(`SELECT text FROM x_posts WHERE id = ?1`).bind(g.post_id)))
+  const posts = await db.batch(groups.map((g) => db.prepare(`SELECT text, extra FROM x_posts WHERE id = ?1`).bind(g.post_id)))
   return groups.map((g, i) => {
     const [first, second] = (latest[i].results ?? []) as Array<Record<string, any>>
     const liked = g.kind === 'like'
@@ -116,13 +144,42 @@ async function activityLines(db: D1Database, before: string | null, limit: numbe
       name: first?.name ?? null,
       avatar: first?.avatar ?? null,
       target_text: liked ? ((posts[i].results?.[0] as any)?.text ?? null) : null,
+      target_extra: liked ? parseExtra((posts[i].results?.[0] as any)?.extra) : null,
       count: g.n,
       second: second ? second.name || (second.username ? '@' + second.username : null) : null,
     } as Record<string, any>
   })
 }
 
-const clean = (r: Record<string, any>): Record<string, any> => ({ ...r, answered: !!r.answered, liked: !!r.liked })
+export const parseExtra = (v: unknown) => {
+  if (typeof v !== 'string') return v ?? null
+  try { return JSON.parse(v) } catch { return null }
+}
+
+const clean = (r: Record<string, any>): Record<string, any> => ({ ...r, answered: !!r.answered, liked: !!r.liked, extra: parseExtra(r.extra), target_extra: parseExtra(r.target_extra) })
+
+// One post with its author, from our cache, else from X once (half a cent).
+// A cached post that has links but no extras yet is looked up once more;
+// '{}' records that X had nothing to add, so it is never asked twice.
+export async function lookPost(env: Env, x: X, token: () => Promise<string>, id: string) {
+  const db = env.DB
+  const find = () =>
+    db
+      .prepare(`SELECT p.id, p.text, p.created_at, p.author_id, p.extra, u.username, u.name, u.avatar
+                FROM x_posts p LEFT JOIN x_users u ON u.id = p.author_id WHERE p.id = ?1`)
+      .bind(id)
+      .first<Record<string, any>>()
+  let row = await find()
+  if (!row || !row.author_id || (row.extra === null && /t\.co\//.test(row.text ?? '')) || (row.author_id && !row.username)) {
+    const p = await x.getPost(await token(), id).catch(() => null)
+    if (p) {
+      await savePosts(db, [{ ...p, extra: p.extra ?? {} }])
+      if (p.author) await saveUsers(db, [p.author])
+    }
+    row = await find()
+  }
+  return row ? ({ ...row, extra: parseExtra(row.extra) } as Record<string, any>) : null
+}
 
 export async function getNotification(db: D1Database, id: string) {
   const r = await db.prepare(`${LIST_SQL} WHERE n.id = ?1`).bind(id).first<Record<string, any>>()
@@ -161,6 +218,7 @@ export async function hydrate(env: Env, x: X, token: string, n: { actor_id: stri
     if (!have || have.reply_to === null) {
       const p = await x.getPost(token, n.target_post_id).catch(() => null)
       if (p) await savePosts(db, [p])
+      if (p?.author) await saveUsers(db, [p.author])
     }
   }
 }
@@ -230,8 +288,8 @@ export async function syncLikes(env: Env, x: X, token: string, ownerId: string):
 // A message we sent is read by definition. Returns true only when it is new.
 export async function saveDm(db: D1Database, m: Dm, ownerId: string): Promise<boolean> {
   const r = await db
-    .prepare(`INSERT OR IGNORE INTO dms (id, conversation_id, partner_id, sender_id, text, created_at, read) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`)
-    .bind(m.id, m.conversation_id, m.partner_id, m.sender_id, m.text, m.created_at, m.sender_id === ownerId ? 1 : 0)
+    .prepare(`INSERT OR IGNORE INTO dms (id, conversation_id, partner_id, sender_id, text, created_at, read, extra) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`)
+    .bind(m.id, m.conversation_id, m.partner_id, m.sender_id, m.text, m.created_at, m.sender_id === ownerId ? 1 : 0, m.extra ? JSON.stringify(m.extra) : null)
     .run()
   const fresh = (r.meta.changes ?? 0) > 0
   // Answering, here or anywhere else, means what came before has been read.
@@ -251,7 +309,7 @@ async function pushDm(env: Env, m: Dm): Promise<void> {
 // One row per person: the latest message and how many are unread.
 export async function listConversations(db: D1Database) {
   const { results } = await db
-    .prepare(`SELECT d.partner_id, d.text, d.sender_id, d.created_at,
+    .prepare(`SELECT d.partner_id, d.text, d.sender_id, d.created_at, d.extra,
                      (SELECT COUNT(*) FROM dms r WHERE r.partner_id = d.partner_id AND r.read = 0) AS unread,
                      u.username, u.name, u.avatar
               FROM dms d
@@ -259,22 +317,24 @@ export async function listConversations(db: D1Database) {
               WHERE d.id = (SELECT id FROM dms l WHERE l.partner_id = d.partner_id ORDER BY l.created_at DESC, l.id DESC LIMIT 1)
               ORDER BY d.created_at DESC`)
     .all()
-  return results
+  return results.map((r) => ({ ...r, extra: parseExtra(r.extra) }))
 }
 
 export async function listMessages(db: D1Database, partnerId: string) {
   const { results } = await db
-    .prepare(`SELECT id, sender_id, text, created_at FROM dms WHERE partner_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 200`)
+    .prepare(`SELECT id, sender_id, text, created_at, extra FROM dms WHERE partner_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 200`)
     .bind(partnerId)
     .all()
-  return results.reverse()
+  return results.reverse().map((r) => ({ ...r, extra: parseExtra(r.extra) }))
 }
 
 // The safety net and the first fill: ask X for recent messages. A cent each,
 // so only on request.
 export async function syncDms(env: Env, x: X, token: string, ownerId: string, partnerId?: string): Promise<number> {
   const db = env.DB
-  const page = await x.dms(token, ownerId, { partnerId, max: partnerId ? 50 : 100 })
+  // Twenty at most: a cent each, and anything newer than the last check came
+  // in through the webhook already.
+  const page = await x.dms(token, ownerId, { partnerId, max: 20 })
   await saveUsers(db, page.users)
   let added = 0
   for (const m of page.dms) if (await saveDm(db, m, ownerId)) added++
@@ -345,7 +405,9 @@ export async function backfill(env: Env, x: X, token: string, ownerId: string): 
   const since = await getSetting(db, 'mentions_since')
   const page = await x.mentions(token, ownerId, since ?? undefined)
   await saveUsers(db, page.users)
-  await savePosts(db, [...page.parents, ...cleanPosts(page.posts)])
+  // The mention posts themselves, with the extras read alongside them.
+  const own = page.posts.flatMap((p) => cleanPosts([p]).map((c) => ({ ...c, extra: p.extra })))
+  await savePosts(db, [...page.parents, ...own])
   let added = 0
   for (const post of page.posts) {
     const n = mentionNotification(post, ownerId)
@@ -364,12 +426,13 @@ export async function backfill(env: Env, x: X, token: string, ownerId: string): 
 export async function listOwnPosts(db: D1Database, ownerId: string, before: string | null, limit: number) {
   const oldest = await getSetting(db, 'posts_oldest')
   const { results } = await db
-    .prepare(`SELECT id, text, created_at FROM x_posts
-              WHERE author_id = ?1 AND CAST(id AS INTEGER) >= CAST(?2 AS INTEGER) AND (?3 IS NULL OR CAST(id AS INTEGER) < CAST(?3 AS INTEGER))
+    // Top-level posts only: replies, to others or to yourself, stay out.
+    .prepare(`SELECT id, text, created_at, extra FROM x_posts
+              WHERE author_id = ?1 AND COALESCE(reply_to, '') = '' AND CAST(id AS INTEGER) >= CAST(?2 AS INTEGER) AND (?3 IS NULL OR CAST(id AS INTEGER) < CAST(?3 AS INTEGER))
               ORDER BY CAST(id AS INTEGER) DESC LIMIT ?4`)
     .bind(ownerId, oldest ?? '0', before, limit)
-    .all<{ id: string; text: string; created_at: string | null }>()
-  return { items: results, synced: oldest !== null }
+    .all<{ id: string; text: string; created_at: string | null; extra: string | null }>()
+  return { items: results.map((r) => ({ ...r, extra: parseExtra(r.extra) })), synced: oldest !== null }
 }
 
 export async function syncOwnPosts(env: Env, x: X, token: string, ownerId: string, older: boolean): Promise<number> {

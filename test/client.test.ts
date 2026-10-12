@@ -3,6 +3,7 @@ import { weightedLength } from '../src/lib/text'
 import { collapse, handled, type Item } from '../src/lib/collapse'
 import * as d from '../src/lib/drafts-core'
 import { ago } from '../src/lib/time'
+import { plain, rich } from '../src/lib/rich'
 
 describe('character count', () => {
   it('counts plain text one per character', () => {
@@ -135,5 +136,35 @@ describe('relative time', () => {
   const back = (s: number) => new Date(now - s * 1000).toISOString()
   it('walks the ladder', () => {
     expect([ago(back(10), now), ago(back(300), now), ago(back(3 * 3600), now), ago(back(2 * 86400), now), ago(back(21 * 86400), now)]).toEqual(['now', '5m', '3h', '2d', '3w'])
+  })
+})
+
+describe('links in posts', () => {
+  const extra = {
+    urls: [
+      { u: 'https://t.co/a', x: 'https://example.com/long/path', d: 'example.com/long/…' },
+      { u: 'https://t.co/b', x: 'https://x.com/sam/status/99?s=20', d: 'x.com/sam/status/99' },
+      { u: 'https://t.co/c', x: 'https://x.com/ana/status/70/photo/1', d: 'pic.x.com/c', m: 1 as const },
+    ],
+    media: [{ type: 'photo', url: 'https://pbs/x.jpg' }],
+  }
+
+  it('shows where a link goes, drops the image link for the image, and turns a post link into a card', () => {
+    const r = rich('look https://t.co/a and https://t.co/b https://t.co/c', extra)
+    expect(r.parts).toEqual([{ t: 'text', s: 'look ' }, { t: 'link', href: 'https://example.com/long/path', label: 'example.com/long/…' }, { t: 'text', s: ' and' }])
+    expect(r.quotes).toEqual(['99'])
+    expect(r.media).toHaveLength(1)
+  })
+
+  it('keeps an unknown t.co link as a link, and lists a quoted post once', () => {
+    const r = rich('see https://t.co/zzz', { quoted: '5', urls: [{ u: 'https://t.co/q', x: 'https://twitter.com/a/status/5', d: '' }] })
+    expect(r.parts).toEqual([{ t: 'text', s: 'see ' }, { t: 'link', href: 'https://t.co/zzz', label: 't.co/zzz' }])
+    expect(r.quotes).toEqual(['5'])
+  })
+
+  it('flattens to a line, and says what is there when there is no text', () => {
+    expect(plain('look https://t.co/a https://t.co/c', extra)).toBe('look example.com/long/…')
+    expect(plain('https://t.co/c', extra)).toBe('An image')
+    expect(plain(null)).toBe('')
   })
 })

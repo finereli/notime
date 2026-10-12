@@ -1,6 +1,8 @@
 <script lang="ts">
   import Avatar from '../components/Avatar.svelte'
   import Icon from '../components/Icon.svelte'
+  import Rich from '../components/Rich.svelte'
+  import { plain } from '../lib/rich'
   import { notifications } from '../lib/notifications.svelte'
   import { VERB, collapse, crowd, cumulative, displayName } from '../lib/collapse'
   import { explain } from '../lib/prefs.svelte'
@@ -52,10 +54,14 @@
               <span class="glyph" class:heart-glyph={last.type === 'likes'}><Icon name={last.type === 'likes' ? 'favorite_fill' : 'person_add'} size={20} /></span>
               <div class="main">
                 <p class="head">
-                  <span class="who"><strong>{displayName(last)}</strong>{crowd(last)} {VERB[last.type]}</span>
+                  {#if last.type === 'likes'}
+                    <span class="who"><strong>{last.count}</strong> {last.count === 1 ? 'like' : 'likes'} on your post</span>
+                  {:else}
+                    <span class="who"><strong>{displayName(last)}</strong>{crowd(last)} {VERB[last.type]}</span>
+                  {/if}
                   <time>{ago(last.created_at)}</time>
                 </p>
-                {#if last.target_text}<p class="context" dir="auto">{last.target_text}</p>{/if}
+                {#if last.target_text}<p class="context" dir="auto">{plain(last.target_text, last.target_extra)}</p>{/if}
               </div>
             </svelte:element>
           {:else}
@@ -70,9 +76,9 @@
               {#if earlier}
                 <p class="thread"><Icon name="forum" size={14} /> {earlier === 1 ? 'Continues a conversation' : `${earlier + 1} replies in this conversation`}</p>
               {/if}
-              <p class="text" dir="auto">{last.text}</p>
+              <div class="text" dir="auto"><Rich text={last.text} extra={last.extra} inline /></div>
               {#if last.target_text}
-                <p class="context" dir="auto">{last.target_text}</p>
+                <p class="context" dir="auto">{plain(last.target_text, last.target_extra)}</p>
               {/if}
             </div>
           </a>

@@ -9,6 +9,7 @@
   import { explain, prefs } from '../lib/prefs.svelte'
   import { router } from '../lib/router.svelte'
   import { ago } from '../lib/time'
+  import { plain } from '../lib/rich'
 
   let starting = $state(false)
   let username = $state('')
@@ -70,7 +71,7 @@
               <Avatar src={c.avatar} name={displayName(c)} />
               <div class="main">
                 <p class="head"><strong>{displayName(c)}</strong><time>{ago(c.created_at)}</time></p>
-                <p class="text" dir="auto">{c.sender_id === auth.user?.id ? 'You: ' : ''}{c.text}</p>
+                <p class="text" dir="auto">{c.sender_id === auth.user?.id ? 'You: ' : ''}{plain(c.text, c.extra)}</p>
               </div>
               {#if c.unread > 0}<span class="count">{c.unread}</span>{/if}
             </a>

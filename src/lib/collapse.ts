@@ -4,6 +4,8 @@
 // earlier ones leave the list. Branches stay separate rows, each with the
 // part of the conversation that led to it.
 
+import type { Extra } from './rich'
+
 export interface Item {
   id: string
   // likes and follows are cumulative lines: one per post, one for followers.
@@ -19,6 +21,9 @@ export interface Item {
   name: string | null
   avatar: string | null
   target_text: string | null
+  // Links, images and quoted posts, for the text and for the post it answers.
+  extra?: Extra | null
+  target_extra?: Extra | null
   // The earlier notification this one continues, if any.
   prev_id?: string | null
   // Some post of the owner's answers this one (sent here or on X).

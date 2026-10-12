@@ -2,6 +2,8 @@
   import Avatar from '../components/Avatar.svelte'
   import Composer from '../components/Composer.svelte'
   import Icon from '../components/Icon.svelte'
+  import Rich from '../components/Rich.svelte'
+  import { plain } from '../lib/rich'
   import { apiJson } from '../lib/api'
   import { drafts } from '../lib/drafts.svelte'
   import { replyId } from '../lib/drafts-core'
@@ -57,17 +59,17 @@
   {#if item}
     <!-- The conversation so far, oldest first: what you wrote, what they said. -->
     {#each chain as c (c.id)}
-      {#if c.target_text}<p class="yours" dir="auto"><span>You</span>{c.target_text}</p>{/if}
+      {#if c.target_text}<p class="yours" dir="auto"><span>You</span>{plain(c.target_text, c.target_extra)}</p>{/if}
       <div class="earlier">
         <Avatar src={c.avatar} name={displayName(c)} size={28} />
         <div>
           <p class="who"><strong>{displayName(c)}</strong> <time>{ago(c.created_at)}</time></p>
-          <p dir="auto">{c.text}</p>
+          <p dir="auto"><Rich text={c.text} extra={c.extra} /></p>
         </div>
       </div>
     {/each}
     {#if item.target_text}
-      <p class="yours" dir="auto"><span>{chain.length ? 'You' : 'You wrote'}</span>{item.target_text}</p>
+      <p class="yours" dir="auto"><span>{chain.length ? 'You' : 'You wrote'}</span>{plain(item.target_text, item.target_extra)}</p>
     {/if}
 
     <article>
@@ -79,7 +81,7 @@
         </div>
         <time>{ago(item.created_at)}</time>
       </header>
-      <p class="text" dir="auto">{item.text}</p>
+      <div class="text" dir="auto"><Rich text={item.text} extra={item.extra} /></div>
       <div class="actions">
         {#if item.username && item.post_id}
           <a class="out" href={`https://x.com/${item.username}/status/${item.post_id}`} target="_blank" rel="noopener">Open on X <Icon name="open_in_new" size={14} /></a>

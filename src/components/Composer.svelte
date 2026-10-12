@@ -29,9 +29,9 @@
   const limit = $derived(prefs.longPosts ? LONG_LIMIT : LIMIT)
   const tooLong = $derived(draft.posts.some((p) => !p.sentId && weightedLength(p.text) > limit))
   const canSend = $derived(!sending.active && pollReady && !tooLong && draft.posts.some((p) => !p.sentId && !postIsEmpty(p)))
-  const sendLabel = $derived(resuming ? 'Post the rest' : thread ? 'Post all' : reply?.quote ? 'Quote' : reply?.notificationId ? 'Reply' : 'Post')
+  const sendLabel = $derived(resuming ? 'Post the rest' : thread ? 'Post all' : reply?.quote ? 'Quote' : reply?.notificationId || reply?.other ? 'Reply' : 'Post')
   // Answering someone is one post. Following up on yourself can run long.
-  const single = $derived(!!reply?.notificationId)
+  const single = $derived(!!reply?.notificationId || (!!reply?.other && !reply?.quote))
 
   const DURATIONS = [
     { minutes: 60, label: '1 hour' },

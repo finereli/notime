@@ -2,6 +2,7 @@
   import Icon from '../components/Icon.svelte'
   import { posts, postTime } from '../lib/posts.svelte'
   import { ago } from '../lib/time'
+  import { plain } from '../lib/rich'
   import { toasts } from '$shared/lib/toast.svelte'
 
   let busy = $state(false)
@@ -29,7 +30,7 @@
     <ul>
       {#each posts.items as p (p.id)}
         <li>
-          <a class="text" href={`#/p/${p.id}`} dir="auto">{p.text}</a>
+          <a class="text" href={`#/p/${p.id}`} dir="auto">{plain(p.text, p.extra)}</a>
           <div class="foot">
             <time>{ago(postTime(p))}</time>
             <a href={`#/p/${p.id}`}><Icon name="reply" size={16} /> Follow up</a>

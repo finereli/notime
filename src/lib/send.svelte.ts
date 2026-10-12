@@ -10,7 +10,8 @@ import { postIsEmpty, type Draft } from './drafts-core'
 export interface Sent { ids: string[]; url: string }
 // What a post answers: a notification, or one of the owner's own posts, which
 // can be followed up (a reply to yourself) or quoted.
-export interface ReplyTarget { postId: string; notificationId?: string; quote?: boolean }
+// other: a reply to someone else's post, reached through a link.
+export interface ReplyTarget { postId: string; notificationId?: string; quote?: boolean; other?: boolean }
 
 // X forgets an uploaded image after a day. Stay well inside that.
 const MEDIA_TTL = 20 * 3600 * 1000

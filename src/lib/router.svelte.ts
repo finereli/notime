@@ -15,7 +15,8 @@ export const router = new Router<Route>({
   parse(path) {
     const detail = path.match(/^\/n\/(.+)$/)
     if (detail) return { view: 'detail', id: decodeURIComponent(detail[1]) }
-    const post = path.match(/^\/p\/(\d+)(\/quote)?$/)
+    // /p/ is one of yours, /t/ any post a link points at. Same screen.
+    const post = path.match(/^\/[pt]\/(\d+)(\/quote)?$/)
     if (post) return { view: 'post', id: post[1], quote: !!post[2] }
     const chat = path.match(/^\/m\/(\d+)$/)
     if (chat) return { view: 'chat', id: chat[1] }

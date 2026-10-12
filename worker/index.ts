@@ -4,7 +4,7 @@ import { bearer, createSession, deleteSession, validateSession } from './session
 import { NeedsLogin, RefreshRejected, SCOPES, beginLogin, d1TokenStore, exchangeCode, freshToken, refreshGrant, takeVerifier, type TokenSet } from './oauth'
 import { XError, fakeX, realX, type PostBody, type X, type XUser } from './x'
 import { crcResponse, verifySignature } from './webhook'
-import { backfill, badge, checkBalance, syncLikes, chainOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
+import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { fanOut } from './push'
 import { SETUP_VERSION, repair, status } from './setup'
 import { monthToDate } from './usage'
@@ -173,6 +173,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   // --- notifications --------------------------------------------------------
   if (pathname === '/api/notifications' && method === 'GET') {
     const limit = Math.min(Number(url.searchParams.get('limit')) || 40, 100)
+    // The first page is when the like counts are worth a fresh look.
+    if (!url.searchParams.get('before')) await syncStats(env, x, await token(), acct.x_user_id).catch((e) => console.error('stats failed', e))
     const { items, more } = await listNotifications(db, url.searchParams.get('before'), limit)
     return json({ items, unread: await unreadCount(db), more })
   }
@@ -184,6 +186,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   }
 
   if (pathname === '/api/notifications/check' && method === 'POST') {
+    await syncStats(env, x, await token(), acct.x_user_id, true).catch((e) => console.error('stats failed', e))
     return json({ added: await backfill(env, x, await token(), acct.x_user_id) })
   }
 
@@ -261,17 +264,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     return json({ added: await syncOwnPosts(env, x, await token(), acct.x_user_id, !!b.older) })
   }
 
-  if (pathname.startsWith('/api/posts/') && method === 'GET') {
-    const id = pathname.slice('/api/posts/'.length)
-    if (!/^\d+$/.test(id)) return fail('not found', 404)
-    const find = () => db.prepare(`SELECT id, text, created_at, author_id FROM x_posts WHERE id = ?1`).bind(id).first<{ id: string; text: string; created_at: string | null; author_id: string | null }>()
-    let row = await find()
-    if (!row) {
-      const p = await x.getPost(await token(), id)
-      if (p) await savePosts(db, [p])
-      row = await find()
-    }
-    if (!row || row.author_id !== acct.x_user_id) return fail('not found', 404)
+  // Any post, by id: ours, or one a link points at. Kept once looked up.
+  const anyPost = pathname.match(/^\/api\/(x\/)?posts\/(\d+)$/)
+  if (anyPost && method === 'GET') {
+    const row = await lookPost(env, x, token, anyPost[2])
+    if (!row || (!anyPost[1] && row.author_id !== acct.x_user_id)) return fail('not found', 404)
     return json(row)
   }
 
@@ -280,15 +277,6 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     // The first visit fills the list from X; after that the webhook keeps it.
     if ((await getSetting(db, 'dms_synced')) === null) await syncDms(env, x, await token(), acct.x_user_id).catch(() => 0)
     return json({ items: await listConversations(db), unread: await unreadDms(db) })
-  }
-
-  if (pathname === '/api/dms/sync' && method === 'POST') {
-    try {
-      return json({ added: await syncDms(env, x, await token(), acct.x_user_id) })
-    } catch (e) {
-      if (e instanceof XError && e.status === 403 && (await missingScopes()).some((s) => s.startsWith('dm.'))) return fail('needs_scopes', 403)
-      throw e
-    }
   }
 
   if (pathname === '/api/dms/find' && method === 'POST') {
