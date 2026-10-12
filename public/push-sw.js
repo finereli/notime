@@ -43,3 +43,22 @@ self.addEventListener('notificationclick', (event) => {
     })()
   )
 })
+
+// The browser can replace a subscription on its own. Hand the new one to the
+// server, which accepts it in place of the old one it already knows. The app
+// also re-registers on every launch, so this only closes the gap until then.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    (async () => {
+      const old = event.oldSubscription
+      let sub = event.newSubscription
+      if (!sub && old) sub = await self.registration.pushManager.subscribe(old.options)
+      if (!sub || !old) return
+      await fetch('/api/push/renew', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old: old.endpoint, sub: sub.toJSON() }),
+      })
+    })().catch(() => {})
+  )
+})

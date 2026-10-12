@@ -20,6 +20,7 @@
   import Messages from './views/Messages.svelte'
   import Chat from './views/Chat.svelte'
   import { apiJson } from './lib/api'
+  import { keepPush } from './lib/push'
   import { auth, type User } from './lib/auth.svelte'
   import { dms } from './lib/dms.svelte'
   import { notifications } from './lib/notifications.svelte'
@@ -63,6 +64,9 @@
     dms.load()
   }
   refresh()
+  // Push lost to a reset or rotated by the browser comes back on its own.
+  keepPush()
+  auth.onChange(() => auth.signedIn && keepPush())
   auth.onChange(refresh)
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && refresh())
 

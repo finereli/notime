@@ -122,6 +122,21 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     return Response.redirect(`${origin}/#/signin/${await createSession(db)}`, 302)
   }
 
+  // The service worker swapping a subscription the browser replaced. It has
+  // no session to send; knowing a subscription we already hold is the proof.
+  if (pathname === '/api/push/renew' && method === 'POST') {
+    const b = (await request.json().catch(() => ({}))) as { old?: string; sub?: { endpoint?: string; keys?: { p256dh?: string; auth?: string } } }
+    const s = b.sub
+    if (!b.old || !s?.endpoint || !s.keys?.p256dh || !s.keys?.auth) return fail('bad subscription')
+    const known = await db.prepare(`SELECT 1 AS ok FROM push_subs WHERE endpoint = ?1`).bind(b.old).first()
+    if (!known) return fail('unknown subscription', 404)
+    await db.batch([
+      db.prepare(`DELETE FROM push_subs WHERE endpoint = ?1`).bind(b.old),
+      db.prepare(`INSERT INTO push_subs (endpoint, p256dh, auth) VALUES (?1, ?2, ?3) ON CONFLICT(endpoint) DO UPDATE SET p256dh = ?2, auth = ?3`).bind(s.endpoint, s.keys.p256dh, s.keys.auth),
+    ])
+    return json({ ok: true })
+  }
+
   // --- everything below needs a session -------------------------------------
   const session = bearer(request)
   if (!(await validateSession(db, session))) return fail('unauthorized', 401)
