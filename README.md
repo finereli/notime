@@ -30,6 +30,20 @@ Left out on purpose: video, GIFs, quote posts (X sells those to Enterprise
 only), scheduling, group messages, settings for anything the app can work
 out itself.
 
+## For agents (MCP)
+
+An AI agent can read notime through a remote MCP server at `/mcp`: the
+notifications (with whole conversations), your posts with like counts,
+direct messages, followers, search across all of it, and what the API has
+cost. It is read only: nothing an agent does can post, like or send.
+
+Access is OAuth, as the MCP spec has it. The agent discovers
+`/.well-known/oauth-authorization-server`, registers itself, and sends you
+to a consent page; you allow it by signing in with X. Settings lists the
+agents that have access, with a button to take it back. Everything is read
+from notime's own database, so an agent's reading costs nothing, except
+`get_post` for a post the app has never seen (half a cent, once).
+
 ## How it is built
 
 One Cloudflare Worker serves the built Svelte app and the API, with D1 behind
@@ -69,6 +83,7 @@ callback with X; `localhost` is not.
     npm test                      # unit tests
     node test/e2e.mjs             # the whole app in a headless phone (CHROME_PATH to pick a browser)
     node test/updates.mjs         # the service worker update flow
+    node test/mcp.mjs             # an MCP client: OAuth round trip, every tool
 
 Both browser scripts need `npm run dev` running in another terminal.
 

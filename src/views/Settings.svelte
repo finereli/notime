@@ -29,6 +29,27 @@
   apiJson<Status>('/api/setup/status').then((s) => (status = s)).catch(() => (statusFailed = true))
   apiJson<Usage>('/api/usage').then((u) => (usage = u)).catch(() => {})
 
+  // Agents (MCP clients) that can read notime.
+  interface Agents { url: string; items: Array<{ id: string; name: string | null; created_at: string; last_used: string | null }> }
+  let agents = $state<Agents | null>(null)
+  let copied = $state(false)
+  const loadAgents = () => apiJson<Agents>('/api/mcp/clients').then((a) => (agents = a)).catch(() => {})
+  loadAgents()
+
+  async function revokeAgent(id: string) {
+    try {
+      await apiJson('/api/mcp/revoke', { method: 'POST', body: { id } })
+      await loadAgents()
+    } catch {
+      toasts.error('Could not take access back')
+    }
+  }
+
+  async function copyUrl() {
+    if (!agents) return
+    try { await navigator.clipboard.writeText(agents.url); copied = true; setTimeout(() => (copied = false), 2000) } catch {}
+  }
+
   // Status lines sit next to the button that caused them and clear themselves.
   function note(text: string, ms = 5000) {
     pushNote = text
@@ -130,6 +151,26 @@
   </section>
 
   <section>
+    <h2>Agents</h2>
+    <p class="quiet">An AI agent can read notime (notifications, conversations, posts, messages, cost) but never post or send. Give it this address; it will ask you to sign in with X to allow it.</p>
+    {#if agents}
+      <div class="row"><code class="url">{agents.url}</code><button class="btn plain" onclick={copyUrl}>{copied ? 'Copied' : 'Copy'}</button></div>
+      {#if agents.items.length}
+        <ul class="checks">
+          {#each agents.items as a (a.id)}
+            <li>
+              <span>{a.name ?? 'An agent'}<span class="when">{a.last_used ? ` · used ${when(a.last_used + 'Z')}` : ' · not used yet'}</span></span>
+              <button class="revoke" onclick={() => revokeAgent(a.id)}>Revoke</button>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="quiet">No agent has access.</p>
+      {/if}
+    {/if}
+  </section>
+
+  <section>
     <h2>What this has cost</h2>
     {#if usage}
       {#if usage.since}
@@ -174,6 +215,9 @@
   .checks li span:first-child { color: var(--text-primary); }
   .checks li.bad span:last-child { color: var(--danger); }
   .checks li.why { color: var(--danger); font-size: 0.78rem; padding-top: 0; overflow-wrap: anywhere; }
+  .url { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--bg-hover); font-size: 0.8rem; overflow-wrap: anywhere; align-self: center; }
+  .checks .when { color: var(--text-secondary); }
+  .revoke { color: var(--danger); font-size: 0.82rem; min-height: 32px; }
   .total { font-family: var(--font-write); font-size: 1.6rem; font-variant-numeric: tabular-nums; }
   .total .quiet { font-family: var(--font-body); }
   .balance { font-size: 0.95rem; font-variant-numeric: tabular-nums; }

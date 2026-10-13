@@ -12,13 +12,14 @@ export const SCOPES = 'tweet.read tweet.write users.read media.write offline.acc
 
 export interface TokenSet { access_token: string; refresh_token: string; expires_in: number }
 
-export async function beginLogin(env: Env, origin: string): Promise<string> {
+// mcp: the id of an MCP authorize request this sign-in approves, if any.
+export async function beginLogin(env: Env, origin: string, mcp?: string): Promise<string> {
   const state = randomToken(24)
   const verifier = randomToken(48)
   const challenge = b64uEncode(await crypto.subtle.digest('SHA-256', utf8(verifier)))
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM oauth_states WHERE created_at < datetime('now', '-1 hour')`),
-    env.DB.prepare(`INSERT INTO oauth_states (state, verifier) VALUES (?1, ?2)`).bind(state, verifier),
+    env.DB.prepare(`INSERT INTO oauth_states (state, verifier, mcp) VALUES (?1, ?2, ?3)`).bind(state, verifier, mcp ?? null),
   ])
   const q = new URLSearchParams({
     response_type: 'code',
@@ -32,9 +33,8 @@ export async function beginLogin(env: Env, origin: string): Promise<string> {
   return 'https://x.com/i/oauth2/authorize?' + q
 }
 
-export async function takeVerifier(db: D1Database, state: string): Promise<string | null> {
-  const row = await db.prepare(`DELETE FROM oauth_states WHERE state = ?1 RETURNING verifier`).bind(state).first<{ verifier: string }>()
-  return row?.verifier ?? null
+export async function takeVerifier(db: D1Database, state: string): Promise<{ verifier: string; mcp: string | null } | null> {
+  return db.prepare(`DELETE FROM oauth_states WHERE state = ?1 RETURNING verifier, mcp`).bind(state).first<{ verifier: string; mcp: string | null }>()
 }
 
 // A refusal means the grant itself is no good. Anything else (a timeout, a

@@ -8,6 +8,8 @@ import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf,
 import { fanOut } from './push'
 import { SETUP_VERSION, repair, status } from './setup'
 import { monthToDate } from './usage'
+import { mcpRequest } from './mcp'
+import { approve, authorize, bearerOk, discovery, listClients, pendingExists, preflight, register, revoke, token as oauthToken, unauthorized } from './mcp-auth'
 
 interface Account { x_user_id: string; username: string; name: string | null; avatar: string | null; needs_login: number }
 
@@ -35,7 +37,8 @@ const page = (title: string, body: string, status = 200) =>
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
-    if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request)
+    const p = url.pathname
+    if (!p.startsWith('/api/') && p !== '/mcp' && !p.startsWith('/oauth/') && !p.startsWith('/.well-known/oauth') && p !== '/.well-known/openid-configuration') return env.ASSETS.fetch(request)
     try {
       return await route(request, env, ctx, url)
     } catch (e) {
@@ -82,6 +85,28 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     return json({ ok: true })
   }
 
+  // --- MCP: an agent reading notime, with OAuth in front -----------------------
+  if (method === 'OPTIONS' && (pathname === '/mcp' || pathname.startsWith('/oauth/'))) return preflight()
+  const doc = discovery(pathname, origin)
+  if (doc) return doc
+  if (pathname === '/oauth/register' && method === 'POST') return register(request, db)
+  if (pathname === '/oauth/authorize' && method === 'GET') return authorize(url, db)
+  if (pathname === '/oauth/token' && method === 'POST') return oauthToken(request, db)
+  if (pathname === '/oauth/continue' && method === 'GET') {
+    // Approving is signing in with X as the owner. Locally, the stand-in X
+    // has nothing to check, so the request is approved on the spot.
+    const pending = url.searchParams.get('p') ?? ''
+    if (!(await pendingExists(db, pending))) return page('That request expired', 'Start again from the app that asked.', 400)
+    if (dev) return approve(db, pending)
+    return Response.redirect(await beginLogin(env, origin, pending), 302)
+  }
+  if (pathname === '/mcp') {
+    if (!(await bearerOk(request, db))) return unauthorized(origin)
+    const acct = await account(db)
+    if (!acct || acct.needs_login) return Response.json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'notime needs its owner to sign in to X again' } }, { status: 503 })
+    return mcpRequest(request, { env, x, token, ownerId: acct.x_user_id, username: acct.username })
+  }
+
   // --- signing in -----------------------------------------------------------
   if (pathname === '/api/auth/login') {
     if (dev) {
@@ -96,7 +121,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
 
   if (pathname === '/api/auth/callback') {
     const code = url.searchParams.get('code')
-    const verifier = await takeVerifier(db, url.searchParams.get('state') || '')
+    const login = await takeVerifier(db, url.searchParams.get('state') || '')
+    const verifier = login?.verifier
     if (!code || !verifier) return page('Sign in did not finish', url.searchParams.get('error') === 'access_denied' ? 'You cancelled at X.' : 'The sign in link expired. Try again.', 400)
     let tokens: TokenSet
     try {
@@ -111,6 +137,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     // Remember what X granted, so the app can say when a newer feature needs
     // signing in again.
     await setSetting(db, 'granted_scopes', (tokens as TokenSet & { scope?: string }).scope ?? SCOPES)
+    // This sign-in was the owner approving an agent: send the agent its code.
+    if (login.mcp) return approve(db, login.mcp)
     ctx.waitUntil(
       (async () => {
         await repair(env, x, tokens.access_token, origin, me.id).catch((e) => console.error('repair failed', e))
@@ -364,6 +392,14 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
 
   if (pathname === '/api/push/test' && method === 'POST') {
     return json(await fanOut(db, { title: 'notime', body: 'Notifications work on this device.', tag: 'test', url: '/#/notifications', unread: await badge(db) }, env))
+  }
+
+  // --- agents with MCP access -----------------------------------------------
+  if (pathname === '/api/mcp/clients' && method === 'GET') return json({ items: await listClients(db), url: `${origin}/mcp` })
+  if (pathname === '/api/mcp/revoke' && method === 'POST') {
+    const b = (await request.json()) as { id?: string }
+    if (b.id) await revoke(db, b.id)
+    return json({ ok: true })
   }
 
   // --- plumbing -------------------------------------------------------------
