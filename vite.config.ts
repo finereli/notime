@@ -42,6 +42,9 @@ export default defineConfig({
         // browser byte-checks imported scripts on every update check, so a
         // change to it rides the same update flow as everything else.
         workbox: { importScripts: ['/push-sw.js'], globIgnores: ['**/node_modules/**/*', '**/reset.html', '**/push-sw.js'] },
+        // The OAuth pages agents send the owner to are the server's, not the
+        // app's: the worker must not answer them with the cached app.
+        navigateFallbackDenylist: [/^\/api\//, /^\/icons\//, /^\/fonts\//, /^\/reset(\.html)?$/, /^\/oauth\//, /^\/mcp$/, /^\/\.well-known\//],
       })
     ),
   ],
