@@ -156,7 +156,7 @@
     {#if agents}
       <div class="row"><code class="url">{agents.url}</code><button class="btn plain" onclick={copyUrl}>{copied ? 'Copied' : 'Copy'}</button></div>
       {#if agents.items.length}
-        <ul class="checks">
+        <ul class="checks agents">
           {#each agents.items as a (a.id)}
             <li>
               <span>{a.name ?? 'An agent'}<span class="when">{a.last_used ? ` · used ${when(a.last_used + 'Z')}` : ' · not used yet'}</span></span>
@@ -217,7 +217,8 @@
   .checks li.why { color: var(--danger); font-size: 0.78rem; padding-top: 0; overflow-wrap: anywhere; }
   .url { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--bg-hover); font-size: 0.8rem; overflow-wrap: anywhere; align-self: center; }
   .checks .when { color: var(--text-secondary); }
-  .revoke { color: var(--danger); font-size: 0.82rem; min-height: 32px; }
+  .checks.agents li { align-items: center; }
+  .revoke { color: var(--danger); font-size: 0.82rem; min-height: 32px; flex: none; }
   .total { font-family: var(--font-write); font-size: 1.6rem; font-variant-numeric: tabular-nums; }
   .total .quiet { font-family: var(--font-body); }
   .balance { font-size: 0.95rem; font-variant-numeric: tabular-nums; }

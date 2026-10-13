@@ -5,7 +5,7 @@ import { NeedsLogin, RefreshRejected, SCOPES, beginLogin, d1TokenStore, exchange
 import { XError, fakeX, realX, type PostBody, type X, type XUser } from './x'
 import { crcResponse, verifySignature } from './webhook'
 import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
-import { fanOut } from './push'
+import { pushRoutes } from './push-routes'
 import { SETUP_VERSION, repair, status } from './setup'
 import { monthToDate } from './usage'
 import { mcpRequest } from './mcp'
@@ -150,19 +150,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     return Response.redirect(`${origin}/#/signin/${await createSession(db)}`, 302)
   }
 
-  // The service worker swapping a subscription the browser replaced. It has
-  // no session to send; knowing a subscription we already hold is the proof.
-  if (pathname === '/api/push/renew' && method === 'POST') {
-    const b = (await request.json().catch(() => ({}))) as { old?: string; sub?: { endpoint?: string; keys?: { p256dh?: string; auth?: string } } }
-    const s = b.sub
-    if (!b.old || !s?.endpoint || !s.keys?.p256dh || !s.keys?.auth) return fail('bad subscription')
-    const known = await db.prepare(`SELECT 1 AS ok FROM push_subs WHERE endpoint = ?1`).bind(b.old).first()
-    if (!known) return fail('unknown subscription', 404)
-    await db.batch([
-      db.prepare(`DELETE FROM push_subs WHERE endpoint = ?1`).bind(b.old),
-      db.prepare(`INSERT INTO push_subs (endpoint, p256dh, auth) VALUES (?1, ?2, ?3) ON CONFLICT(endpoint) DO UPDATE SET p256dh = ?2, auth = ?3`).bind(s.endpoint, s.keys.p256dh, s.keys.auth),
-    ])
-    return json({ ok: true })
+  // Push: a device's subscription (kit push/). Renew comes from the service
+  // worker without a session, so this runs before the session check.
+  if (pathname.startsWith('/api/push/')) {
+    const r = await pushRoutes({
+      request, url, db, vapid: env,
+      signedIn: await validateSession(db, bearer(request)),
+      testPayload: async () => ({ title: 'notime', body: 'Notifications work on this device.', tag: 'test', url: '/#/notifications', unread: await badge(db) }),
+    })
+    if (r) return r
   }
 
   // --- everything below needs a session -------------------------------------
@@ -369,29 +365,6 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
       await saveDm(db, m, acct.x_user_id)
       return json(m)
     }
-  }
-
-  // --- push -----------------------------------------------------------------
-  if (pathname === '/api/push/key') return json({ key: env.VAPID_PUBLIC_KEY })
-
-  if (pathname === '/api/push/subscribe' && method === 'POST') {
-    const s = (await request.json()) as { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
-    if (!s.endpoint || !s.keys?.p256dh || !s.keys?.auth) return fail('bad subscription')
-    await db
-      .prepare(`INSERT INTO push_subs (endpoint, p256dh, auth) VALUES (?1, ?2, ?3) ON CONFLICT(endpoint) DO UPDATE SET p256dh = ?2, auth = ?3`)
-      .bind(s.endpoint, s.keys.p256dh, s.keys.auth)
-      .run()
-    return json({ ok: true })
-  }
-
-  if (pathname === '/api/push/unsubscribe' && method === 'POST') {
-    const s = (await request.json()) as { endpoint?: string }
-    await db.prepare(`DELETE FROM push_subs WHERE endpoint = ?1`).bind(s.endpoint ?? '').run()
-    return json({ ok: true })
-  }
-
-  if (pathname === '/api/push/test' && method === 'POST') {
-    return json(await fanOut(db, { title: 'notime', body: 'Notifications work on this device.', tag: 'test', url: '/#/notifications', unread: await badge(db) }, env))
   }
 
   // --- agents with MCP access -----------------------------------------------

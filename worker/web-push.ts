@@ -1,8 +1,37 @@
-import { b64uDecode, b64uEncode, concat, utf8, type Bytes } from './bytes'
-
+// pwa-kit: push/functions/web-push.ts v1
 // Web push without a library: RFC 8291 message encryption (aes128gcm, RFC
-// 8188) and a VAPID token (RFC 8292), all on WebCrypto. The usual `web-push`
-// package leans on Node's crypto and does not run in a Worker.
+// 8188) and a VAPID token (RFC 8292), all on WebCrypto, so it runs in a
+// Cloudflare Worker or Pages Function. The usual `web-push` package leans on
+// Node's crypto and does not.
+//
+//   await fanOut(env.DB, { title, body, tag, url, unread }, env)
+//
+// env needs VAPID_PUBLIC_KEY (base64url, 65-byte uncompressed point),
+// VAPID_PRIVATE_KEY (base64url d) and VAPID_SUBJECT (https URL or mailto:).
+// Make them once with scripts/vapid.mjs and never change them: every
+// existing subscription is bound to the public key.
+
+type Bytes = Uint8Array<ArrayBuffer>
+
+const b64uEncode = (bytes: Uint8Array | ArrayBuffer): string => {
+  const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  let s = ''
+  for (const b of u) s += String.fromCharCode(b)
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+const b64uDecode = (str: string): Bytes => {
+  const s = atob(str.replace(/-/g, '+').replace(/_/g, '/'))
+  const out = new Uint8Array(s.length)
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i)
+  return out
+}
+const concat = (...parts: Uint8Array[]): Bytes => {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let at = 0
+  for (const p of parts) { out.set(p, at); at += p.length }
+  return out
+}
+const utf8 = (s: string): Bytes => new Uint8Array(new TextEncoder().encode(s))
 
 async function hkdf(salt: Bytes, ikm: Bytes, info: Bytes, bytes: number): Promise<Bytes> {
   const key = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits'])

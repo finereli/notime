@@ -1,7 +1,7 @@
 import type { Env } from './env'
 import type { X, XPost, XUser } from './x'
 import { cleanPosts, decode, mentionNotification, parseEvent, pushText, type Dm, type Notification } from './events'
-import { fanOut } from './push'
+import { fanOut } from './web-push'
 import { bump } from './usage'
 
 export async function getSetting(db: D1Database, key: string): Promise<string | null> {

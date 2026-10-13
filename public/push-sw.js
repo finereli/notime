@@ -1,6 +1,14 @@
-// Imported by the generated service worker (see vite.config.ts). Shows a
-// notification when the server pushes one, and opens the right screen when it
-// is tapped.
+// pwa-kit: push/public/push-sw.js v1
+// Imported by the generated service worker: in vite.config's pwaOptions,
+//   workbox: { importScripts: ['/push-sw.js'], globIgnores: [..., '**/push-sw.js'] }
+// The browser byte-checks imported scripts on every update check, so a change
+// here rides the normal update flow. Shows a notification when the server
+// pushes one, opens the right screen when it is tapped, and hands a
+// browser-replaced subscription to the server.
+//
+// Payload: { title, body, tag, url, unread }. url is where a tap goes (a
+// hash route works); unread sets the app badge. Seams: the icon and badge
+// paths below (the badge is a 72px monochrome glyph, Android's status bar).
 
 self.addEventListener('push', (event) => {
   let data = {}

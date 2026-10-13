@@ -1,7 +1,7 @@
 import { createHmac, webcrypto } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { crcResponse, verifySignature } from '../worker/webhook'
-import { encryptPayload, vapidToken } from '../worker/push'
+import { encryptPayload, vapidToken } from '../worker/web-push'
 import { b64uDecode, b64uEncode, concat, utf8, type Bytes } from '../worker/bytes'
 import { mentionNotification, parseDm, parseEvent, pushText, replyTo } from '../worker/events'
 import { NeedsLogin, RefreshRejected, freshToken, type TokenRow, type TokenSet, type TokenStore } from '../worker/oauth'
