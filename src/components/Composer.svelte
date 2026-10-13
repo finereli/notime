@@ -150,7 +150,7 @@
       {/if}
 
       <textarea
-        use:autosize
+        use:autosize={{ value: post.text }}
         bind:value={post.text}
         oninput={changed}
         onfocus={() => (active = i)}

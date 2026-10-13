@@ -141,7 +141,7 @@
     </div>
 
     <form class="compose" onsubmit={(e) => { e.preventDefault(); send() }}>
-      <textarea aria-label="Message" rows="1" placeholder="Message" bind:value={text} oninput={typed} onkeydown={keydown} use:autosize={180} dir="auto"></textarea>
+      <textarea aria-label="Message" rows="1" placeholder="Message" bind:value={text} oninput={typed} onkeydown={keydown} use:autosize={{ value: text, max: 180 }} dir="auto"></textarea>
       <button class="send" aria-label="Send" disabled={!text.trim()}><Icon name="send" size={20} /></button>
     </form>
   {/if}

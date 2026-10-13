@@ -84,6 +84,7 @@ callback with X; `localhost` is not.
     node test/e2e.mjs             # the whole app in a headless phone (CHROME_PATH to pick a browser)
     node test/updates.mjs         # the service worker update flow
     node test/mcp.mjs             # an MCP client: OAuth round trip, every tool
+    node test/textarea.mjs        # a restored long draft fits its box
 
 Both browser scripts need `npm run dev` running in another terminal.
 
