@@ -1,4 +1,4 @@
-<!-- pwa-kit: updates/ui/ResetButton.svelte v4 -->
+<!-- pwa-kit: updates/ui/ResetButton.svelte v5 -->
 <script lang="ts">
   // The drawer's reload control, drawn as the Material "autorenew" glyph.
   // Two jobs, one icon: normally it is the manual escape hatch (forget the

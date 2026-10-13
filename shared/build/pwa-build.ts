@@ -67,9 +67,13 @@ export function pwaOptions({
   globPatterns = ['**/*.{js,css,html,woff2,png,svg}'],
   maxFileSizeMB = 6,
   // Paths the SPA fallback must never swallow: the API, static asset dirs,
-  // and reset.html - the out-of-band escape hatch, which is also never
-  // precached, so it works even when the app itself is stuck.
-  navigateFallbackDenylist = [/^\/api\//, /^\/icons\//, /^\/fonts\//, /^\/reset(\.html)?$/],
+  // reset.html - the out-of-band escape hatch, which is also never
+  // precached, so it works even when the app itself is stuck - and the pages
+  // a server answers for itself when other software sends the user there:
+  // OAuth consent (/oauth/), an MCP endpoint, and /.well-known/ discovery.
+  // Without those, any browser with the app installed opens the app at an
+  // agent's authorize link instead of the consent page.
+  navigateFallbackDenylist = [/^\/api\//, /^\/icons\//, /^\/fonts\//, /^\/reset(\.html)?$/, /^\/oauth\//, /^\/mcp$/, /^\/\.well-known\//],
   workbox = {},
 }: PwaOptionsInput) {
   return {
