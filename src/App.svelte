@@ -1,4 +1,4 @@
-<!-- pwa-kit: shell/src/App.svelte v6 -->
+<!-- pwa-kit: shell/src/App.svelte v9 -->
 <script lang="ts">
   // Shell: login gate, top bar, one scrolling body, drawer. See
   // reference/shell.md. The app has three places to be and no feed.

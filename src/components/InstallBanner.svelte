@@ -1,4 +1,4 @@
-<!-- pwa-kit: install/ui/InstallBanner.svelte v1 -->
+<!-- pwa-kit: install/ui/InstallBanner.svelte v2 -->
 <script lang="ts">
   // Install nudge: a lower-third caption that wipes in from the edge, not a
   // modal. Shows when `when` turns true (after demonstrated engagement - ten
@@ -10,6 +10,8 @@
   //
   // Needs the inline capture in index.html (window.__pwaInstallPrompt) and
   // the icons kit (install_mobile, close, ios_share, more_vert).
+  // `ondismiss` fires when the banner goes away (closed, or installed), so
+  // the host can follow it with the next onboarding step.
   // Seams: the strings, `bottom` offset above the app's own bottom bar,
   // colours (accent-deep surface, a highlight for the icon and edge).
   import Icon from './Icon.svelte'
@@ -23,9 +25,10 @@
     androidSteps = 'Tap',
     androidThen = 'then "Install app"',
     bottom = '48px',
+    ondismiss,
   }: {
     when?: boolean; text?: string; closeLabel?: string; iosSteps?: string; iosThen?: string
-    androidSteps?: string; androidThen?: string; bottom?: string
+    androidSteps?: string; androidThen?: string; bottom?: string; ondismiss?: () => void
   } = $props()
 
   let visible = $state(false)
@@ -78,6 +81,7 @@
   function dismiss() {
     visible = false
     dismissed = true
+    ondismiss?.()
   }
 </script>
 
