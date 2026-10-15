@@ -51,6 +51,10 @@ input, textarea, select { font: inherit; color: inherit; }
 .dark ::-webkit-scrollbar-thumb { background: #45475a; border-radius: 4px; }
 
 /* One measure for every screen: wide enough to read, narrow enough to write. */
+/* Only a view's scroller moves; the page itself never does (see
+   src/lib/layout-watch.ts for what happens if it tries). */
+html { overflow: hidden; overscroll-behavior: none; }
+
 .page { max-width: 38rem; margin: 0 auto; padding: 18px 18px calc(var(--safe-bottom) + 28px); }
 
 .quiet { color: var(--text-secondary); font-size: 0.85rem; line-height: 1.45; }

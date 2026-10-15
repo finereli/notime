@@ -367,6 +367,16 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     }
   }
 
+  // --- what the phone saw when the whole app moved (src/lib/layout-watch.ts) --
+  if (pathname === '/api/client-log' && method === 'POST') {
+    const body = await request.text()
+    await db.batch([
+      db.prepare(`INSERT INTO layout_log (data) VALUES (?1)`).bind(body.slice(0, 4000)),
+      db.prepare(`DELETE FROM layout_log WHERE id <= (SELECT MAX(id) - 200 FROM layout_log)`),
+    ])
+    return json({ ok: true })
+  }
+
   // --- agents with MCP access -----------------------------------------------
   if (pathname === '/api/mcp/clients' && method === 'GET') return json({ items: await listClients(db), url: `${origin}/mcp` })
   if (pathname === '/api/mcp/revoke' && method === 'POST') {
