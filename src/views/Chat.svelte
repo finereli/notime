@@ -152,7 +152,8 @@
   .pad { padding: 18px; }
   .wait { display: grid; place-items: center; padding-top: 20vh; }
 
-  header { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+  /* Stays put while the messages scroll under it. */
+  header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
   header div { display: flex; flex-direction: column; min-width: 0; }
   header strong { font-weight: 500; }
   header a { font-size: 0.8rem; color: var(--text-secondary); text-decoration: none; }
