@@ -58,10 +58,14 @@
       {#if error}<p class="error-line" role="alert">{error}</p>{/if}
     {/if}
 
+    {#if dms.chat === 'locked'}
+      <p class="locked">X keeps your messages encrypted now. <a class="link" href="#/settings">Unlock them in Settings</a> to read and answer them here.</p>
+    {/if}
+
     {#if dms.items.length === 0}
       <div class="empty">
         <h2>No messages.</h2>
-        <p class="quiet">Messages people send you will show up here. X only lets apps see conversations that are not end-to-end encrypted.</p>
+        <p class="quiet">Messages people send you will show up here.</p>
       </div>
     {:else}
       <ul>
@@ -114,4 +118,6 @@
   .empty h2 { font-family: var(--font-write); font-size: 1.5rem; font-weight: 400; }
   .wait { display: grid; place-items: center; padding-top: 20vh; }
   .link { color: var(--accent); text-decoration: underline; }
+  .locked { padding: 12px 18px; border-bottom: 1px solid var(--border); font-size: 0.9rem; color: var(--text-secondary); }
+  .locked a { display: inline; padding: 0; }
 </style>

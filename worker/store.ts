@@ -300,7 +300,7 @@ export async function saveDm(db: D1Database, m: Dm, ownerId: string): Promise<bo
 export const unreadDms = async (db: D1Database): Promise<number> =>
   (await db.prepare(`SELECT COUNT(DISTINCT partner_id) AS n FROM dms WHERE read = 0`).first<{ n: number }>())?.n ?? 0
 
-async function pushDm(env: Env, m: Dm): Promise<void> {
+export async function pushDm(env: Env, m: Dm): Promise<void> {
   const u = await env.DB.prepare(`SELECT username, name FROM x_users WHERE id = ?1`).bind(m.partner_id).first<{ username: string; name: string }>()
   const who = u?.name || (u?.username ? '@' + u.username : 'Someone')
   await fanOut(env.DB, { title: who, body: decode(m.text).slice(0, 240), tag: 'dm:' + m.partner_id, url: `/#/m/${m.partner_id}`, unread: await badge(env.DB) }, env)

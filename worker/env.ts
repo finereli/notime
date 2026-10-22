@@ -9,6 +9,8 @@ export interface Env {
   VAPID_PUBLIC_KEY: string
   VAPID_PRIVATE_KEY: string
   VAPID_SUBJECT: string
+  // Seals the owner's X Chat keys at rest (worker/chat.ts).
+  CHAT_SECRET?: string
   // Local development only. See worker/dev.ts for the two locks.
   DEV_AUTH?: string
   APP_ORIGIN?: string

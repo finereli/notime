@@ -2,9 +2,11 @@ import { fail, json, type Env } from './env'
 import { appOrigin, isDev } from './dev'
 import { bearer, createSession, deleteSession, validateSession } from './sessions'
 import { NeedsLogin, RefreshRejected, SCOPES, beginLogin, d1TokenStore, exchangeCode, freshToken, refreshGrant, takeVerifier, type TokenSet } from './oauth'
-import { XError, fakeX, realX, type PostBody, type X, type XUser } from './x'
+import { XError, call, fakeX, realX, type PostBody, type X, type XUser } from './x'
+import { ChatError, NotOnChat, forget, ingestChat, isUnlocked, openChat, sendChat, syncInbox, syncPartner, unlock } from './chat'
+import { runtime as chatRuntime } from './chat-engine'
 import { crcResponse, verifySignature } from './webhook'
-import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
+import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { pushRoutes } from './push-routes'
 import { SETUP_VERSION, repair, status } from './setup'
 import { monthToDate } from './usage'
@@ -78,7 +80,14 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
         const acct = await account(db)
         if (!acct) return
         for (const ev of events) {
-          try { await ingestEvent(env, x, token, ev, acct.x_user_id) } catch (e) { console.error('event failed', e) }
+          try {
+            if (String(ev?.event_type ?? '').startsWith('chat.')) {
+              const m = await ingestChat(env, chatRuntime, call, token, ev, acct.x_user_id)
+              if (m) await knowUser(m.partner_id).then(() => pushDm(env, m))
+            } else await ingestEvent(env, x, token, ev, acct.x_user_id)
+          } catch (e) {
+            console.error('event failed', e)
+          }
         }
       })(),
     )
@@ -190,6 +199,29 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   async function missingScopes(): Promise<string[]> {
     const granted = new Set(((await getSetting(db, 'granted_scopes')) ?? '').split(/\s+/))
     return SCOPES.split(' ').filter((s) => !granted.has(s))
+  }
+
+  // A name for someone we only know by id. A cent, once.
+  async function knowUser(id: string) {
+    if (await db.prepare(`SELECT 1 AS ok FROM x_users WHERE id = ?1`).bind(id).first()) return
+    const u = await x.getUser(await token(), id).catch(() => null)
+    if (u) await saveUsers(db, [u])
+  }
+
+  // Fill Messages from X Chat: the recent conversations and who is in them.
+  // Once: a second caller while one is running does nothing.
+  async function fillChat() {
+    const started = await getSetting(db, 'chat_filling')
+    if ((await getSetting(db, 'chat_synced')) !== null || (started && Date.now() - Number(started) < 120_000)) return
+    await setSetting(db, 'chat_filling', String(Date.now()))
+    const me = await account(db)
+    const chat = me && (await openChat(env, chatRuntime, me.x_user_id))
+    if (!me || !chat) return
+    try {
+      for (const p of await syncInbox(env, chat, call, await token(), me.x_user_id)) await knowUser(p)
+    } finally {
+      chat.free()
+    }
   }
 
   // A deploy that changes what the app subscribes to fixes the subscriptions
@@ -314,8 +346,29 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   // --- direct messages ------------------------------------------------------
   if (pathname === '/api/dms' && method === 'GET') {
     // The first visit fills the list from X; after that the webhook keeps it.
-    if ((await getSetting(db, 'dms_synced')) === null) await syncDms(env, x, await token(), acct.x_user_id).catch(() => 0)
-    return json({ items: await listConversations(db), unread: await unreadDms(db) })
+    const chat = !dev && (await isUnlocked(env))
+    if (chat) await fillChat().catch((e) => console.error('chat fill failed', e))
+    else if (!chat && (await getSetting(db, 'dms_synced')) === null) await syncDms(env, x, await token(), acct.x_user_id).catch(() => 0)
+    return json({ items: await listConversations(db), unread: await unreadDms(db), chat: dev ? 'off' : chat ? 'unlocked' : 'locked' })
+  }
+
+  // --- X Chat: the encrypted messages (worker/chat.ts) ------------------------
+  if (pathname === '/api/chat' && method === 'GET') return json({ unlocked: await isUnlocked(env), ready: !!env.CHAT_SECRET && !dev, synced: await getSetting(db, 'chat_synced') })
+  if (pathname === '/api/chat/unlock' && method === 'POST') {
+    if (dev) return fail('X Chat needs the real X')
+    const b = (await request.json().catch(() => ({}))) as { pin?: string }
+    try {
+      await unlock(env, chatRuntime, call, await token(), acct.x_user_id, String(b.pin ?? ''))
+    } catch (e) {
+      if (e instanceof ChatError) return fail(e.message, e.status)
+      throw e
+    }
+    ctx.waitUntil(fillChat().catch((e) => console.error('chat fill failed', e)))
+    return json({ unlocked: true })
+  }
+  if (pathname === '/api/chat/lock' && method === 'POST') {
+    await forget(env)
+    return json({ unlocked: false })
   }
 
   if (pathname === '/api/dms/find' && method === 'POST') {
@@ -339,7 +392,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
       return json({ unread: await unreadDms(db) })
     }
     if (dm[2] === '/sync' && method === 'POST') {
-      return json({ added: await syncDms(env, x, await token(), acct.x_user_id, partner) })
+      const chat = dev ? null : await openChat(env, chatRuntime, acct.x_user_id)
+      if (!chat) return json({ added: await syncDms(env, x, await token(), acct.x_user_id, partner) })
+      try {
+        return json({ added: await syncPartner(env, chat, call, await token(), acct.x_user_id, partner) })
+      } finally {
+        chat.free()
+      }
     }
     if (!dm[2] && method === 'GET') {
       let user = await who()
@@ -357,8 +416,20 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
       if (text.length > 10000) return fail('Messages stop at 10,000 characters')
       let m
       try {
+        const chat = dev ? null : await openChat(env, chatRuntime, acct.x_user_id)
+        if (chat) {
+          try {
+            return json(await sendChat(env, chat, call, await token(), acct.x_user_id, partner, text))
+          } catch (e) {
+            // Someone who never set up encrypted chat still gets the old kind.
+            if (!(e instanceof NotOnChat)) throw e
+          } finally {
+            chat.free()
+          }
+        }
         m = await x.sendDm(await token(), acct.x_user_id, partner, text)
       } catch (e) {
+        if (e instanceof ChatError) return fail(e.message, e.status)
         if (e instanceof XError && e.status === 403 && (await missingScopes()).includes('dm.write')) return fail('needs_scopes', 403)
         throw e
       }

@@ -15,6 +15,8 @@ class Dms {
   items = $state<Conversation[]>([])
   unread = $state(0)
   loaded = $state(false)
+  // X Chat, the encrypted messages: 'locked' until the PIN is entered in Settings.
+  chat = $state<'locked' | 'unlocked' | 'off'>('off')
   failed = $state(false)
   // Bumped on every load, so an open conversation knows to reread itself.
   tick = $state(0)
@@ -26,8 +28,9 @@ class Dms {
   async load() {
     if (!auth.signedIn) return
     try {
-      const page = await apiJson<{ items: Conversation[]; unread: number }>('/api/dms')
+      const page = await apiJson<{ items: Conversation[]; unread: number; chat?: 'locked' | 'unlocked' | 'off' }>('/api/dms')
       this.items = page.items
+      this.chat = page.chat ?? 'off'
       this.#setUnread(page.unread)
       this.loaded = true
       this.failed = false

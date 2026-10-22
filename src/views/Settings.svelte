@@ -2,6 +2,7 @@
   import { apiJson } from '../lib/api'
   import { disablePush, enablePush, pushState, testPush, type PushState } from '../lib/push'
   import { toasts } from '$shared/lib/toast.svelte'
+  import { dms } from '../lib/dms.svelte'
 
   interface Status {
     url: string
@@ -24,6 +25,42 @@
   let statusFailed = $state(false)
   let repairing = $state(false)
   let usage = $state<Usage | null>(null)
+
+  // X Chat: the server holds the owner's chat keys once the PIN unlocks them.
+  interface ChatState { unlocked: boolean; ready: boolean; synced: string | null }
+  let chat = $state<ChatState | null>(null)
+  let pin = $state('')
+  let chatBusy = $state(false)
+  let chatError = $state('')
+  apiJson<ChatState>('/api/chat').then((c) => (chat = c)).catch(() => {})
+
+  async function unlockChat(e: SubmitEvent) {
+    e.preventDefault()
+    chatBusy = true
+    chatError = ''
+    try {
+      await apiJson('/api/chat/unlock', { method: 'POST', body: { pin } })
+      pin = ''
+      chat = { ...chat!, unlocked: true }
+      dms.load()
+    } catch (err) {
+      chatError = err instanceof Error ? err.message : 'That did not work'
+    } finally {
+      chatBusy = false
+    }
+  }
+
+  async function lockChat() {
+    chatBusy = true
+    try {
+      await apiJson('/api/chat/lock', { method: 'POST' })
+      chat = { ...chat!, unlocked: false, synced: null }
+    } catch {
+      toasts.error('Could not lock them')
+    } finally {
+      chatBusy = false
+    }
+  }
 
   pushState().then((s) => (push = s))
   apiJson<Status>('/api/setup/status').then((s) => (status = s)).catch(() => (statusFailed = true))
@@ -125,6 +162,24 @@
 
   </section>
 
+  {#if chat?.ready}
+    <section>
+      <h2>Encrypted messages</h2>
+      {#if chat.unlocked}
+        <p class="state" role="status"><span class="dot ok"></span>Unlocked. Your messages from X Chat show up in Messages.</p>
+        <p class="quiet">The server keeps your chat keys sealed, so it can read new messages as they arrive and send your answers. Locking deletes them; you would need the PIN again.</p>
+        <div class="row"><button class="btn plain" onclick={lockChat} disabled={chatBusy}>Lock</button></div>
+      {:else}
+        <p class="quiet">X keeps direct messages encrypted. To read and answer them here, enter the PIN you set for Chat in the X app. The PIN is used once to fetch your keys from X's backup and is not kept. A wrong PIN uses up one of a few tries.</p>
+        <form class="row" onsubmit={unlockChat}>
+          <input class="pin" type="password" inputmode="numeric" autocomplete="off" aria-label="X Chat PIN" placeholder="PIN" bind:value={pin} />
+          <button class="btn" disabled={chatBusy || !pin.trim()}>{chatBusy ? 'Unlocking' : 'Unlock'}</button>
+        </form>
+        {#if chatError}<p class="quiet error" role="alert">{chatError}</p>{/if}
+      {/if}
+    </section>
+  {/if}
+
   <section>
     <h2>Connection to X</h2>
     {#if status}
@@ -223,4 +278,6 @@
   .total .quiet { font-family: var(--font-body); }
   .balance { font-size: 0.95rem; font-variant-numeric: tabular-nums; }
   .balance.low { color: var(--danger); }
+  .pin { flex: 1; min-width: 0; max-width: 12rem; min-height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); font-size: 1rem; letter-spacing: 0.2em; }
+  .error { color: var(--danger); }
 </style>

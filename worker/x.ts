@@ -71,7 +71,7 @@ export interface X {
 
 const API = 'https://api.x.com'
 
-async function call(method: string, path: string, token: string, body?: BodyInit | Record<string, unknown>): Promise<any> {
+export async function call(method: string, path: string, token: string, body?: BodyInit | Record<string, unknown>): Promise<any> {
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
   let payload: BodyInit | undefined
   if (body instanceof FormData) payload = body

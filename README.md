@@ -20,8 +20,12 @@ account's API credit.
   the whole conversation. Likes and follows are one cumulative line each
   (per post, and for followers) that rises to the top as it grows, with no
   push. Reposts are left out.
-- Messages: one-to-one direct messages, read and answered as a chat. X's API
-  only reaches conversations that are not end-to-end encrypted.
+- Messages: one-to-one direct messages, read and answered as a chat. X now
+  keeps them encrypted (X Chat). Entering the X Chat PIN once in Settings
+  fetches the owner's chat keys from X's backup (Juicebox); the Worker keeps
+  them sealed with the `CHAT_SECRET` secret and decrypts with X's Chat XDK
+  (WASM). See worker/chat.ts. People without encrypted chat still get the
+  old unencrypted kind.
 - Push: replies, mentions, quotes and messages reach your phone.
 - Cost: the real credit balance from X, with the app's own tally of where it
   went.
@@ -105,6 +109,11 @@ Secrets the Worker expects: `X_CLIENT_ID`, `X_CLIENT_SECRET`,
 `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. They live in `.env`, which is not in
 git. Do not regenerate the VAPID keys once phones have subscribed: every
 existing subscription would silently stop working.
+
+`CHAT_SECRET` is separate: random bytes set straight on the Worker
+(`openssl rand -base64 32 | npx wrangler secret put CHAT_SECRET`) and kept
+nowhere else. It seals the X Chat keys in D1. Changing it only means
+entering the X Chat PIN in Settings again.
 
 ## What X charges
 

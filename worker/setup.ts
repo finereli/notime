@@ -16,6 +16,8 @@ export const EVENTS: Array<{ type: string; label: string; filter?: Record<string
   { type: 'post.quote.create', label: 'Quotes' },
   { type: 'dm.received', label: 'Messages received' },
   { type: 'dm.sent', label: 'Messages you send elsewhere' },
+  { type: 'chat.received', label: 'Encrypted messages received' },
+  { type: 'chat.sent', label: 'Encrypted messages you send elsewhere' },
   { type: 'like.create', label: 'Your likes on X', filter: { direction: 'outbound' } },
   { type: 'follow.follow', label: 'Follows' },
 ]
