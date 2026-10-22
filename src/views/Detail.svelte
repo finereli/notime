@@ -67,7 +67,7 @@
         <Avatar src={c.avatar} name={displayName(c)} size={28} />
         <div>
           <p class="who"><strong>{displayName(c)}</strong> <time>{ago(c.created_at)}</time></p>
-          <p dir="auto"><Rich text={c.text} extra={c.extra} /></p>
+          <p dir="auto"><Rich text={c.text} extra={c.extra} limit={280} /></p>
         </div>
       </div>
     {/each}
@@ -79,7 +79,7 @@
           <Avatar src={t.avatar} name={displayName(t)} size={28} />
           <div>
             <p class="who"><strong>{displayName(t)}</strong> <time>{ago(t.created_at)}</time></p>
-            <p dir="auto"><Rich text={t.text} extra={t.extra} /></p>
+            <p dir="auto"><Rich text={t.text} extra={t.extra} limit={280} /></p>
           </div>
         </div>
       {/if}
@@ -97,7 +97,7 @@
         </div>
         <time>{ago(item.created_at)}</time>
       </header>
-      <div class="text" dir="auto"><Rich text={item.text} extra={item.extra} /></div>
+      <div class="text" dir="auto"><Rich text={item.text} extra={item.extra} limit={280} /></div>
       <div class="actions">
         {#if item.username && item.post_id}
           <a class="out" href={`https://x.com/${item.username}/status/${item.post_id}`} target="_blank" rel="noopener">Open on X <Icon name="open_in_new" size={14} /></a>

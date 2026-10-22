@@ -76,7 +76,7 @@
               {#if earlier}
                 <p class="thread"><Icon name="forum" size={14} /> {earlier === 1 ? 'Continues a conversation' : `${earlier + 1} replies in this conversation`}</p>
               {/if}
-              <div class="text" dir="auto"><Rich text={last.text} extra={last.extra} inline /></div>
+              <div class="text" dir="auto"><Rich text={last.text} extra={last.extra} inline limit={280} /></div>
               {#if last.target_text}
                 <p class="context" dir="auto">{plain(last.target_text, last.target_extra)}</p>
               {/if}

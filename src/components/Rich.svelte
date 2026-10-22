@@ -3,14 +3,18 @@
   // links to. Inline mode is for text inside a tappable row: no links of its
   // own (the row is the link), small images, and a one-line note for quotes.
   import Quote from './Quote.svelte'
-  import { rich, type Extra } from '../lib/rich'
+  import { clip, rich, type Extra } from '../lib/rich'
 
-  let { text, extra = null, inline = false }: { text: string | null; extra?: Extra | null; inline?: boolean } = $props()
+  // `limit` cuts long text to that many characters. Inline, the row opens
+  // the whole thing; otherwise "Show more" opens it in place.
+  let { text, extra = null, inline = false, limit = 0 }: { text: string | null; extra?: Extra | null; inline?: boolean; limit?: number } = $props()
   const r = $derived(rich(text, extra))
+  let open = $state(false)
+  const shown = $derived(limit && !open ? clip(r.parts, limit) : { parts: r.parts, cut: false })
 </script>
 
 {#if r.parts.length}
-  <span class="rich">{#each r.parts as p}{#if p.t === 'text'}{p.s}{:else if inline}<span class="link">{p.label}</span>{:else}<a href={p.href} target="_blank" rel="noopener">{p.label}</a>{/if}{/each}</span>
+  <span class="rich">{#each shown.parts as p}{#if p.t === 'text'}{p.s}{:else if inline}<span class="link">{p.label}</span>{:else}<a href={p.href} target="_blank" rel="noopener">{p.label}</a>{/if}{/each}{#if shown.cut}…{' '}{#if inline}<span class="more">more</span>{:else}<button class="more" onclick={() => (open = true)}>Show more</button>{/if}{/if}</span>
 {/if}
 {#if r.media.length}
   <span class="media" class:inline class:one={r.media.length === 1}>
@@ -34,6 +38,8 @@
 <style>
   .rich { white-space: pre-wrap; overflow-wrap: anywhere; }
   .link { color: var(--accent); }
+  .more { color: var(--accent); font-size: 0.9em; }
+  button.more { text-decoration: underline; }
   .rich a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
   .media { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 8px; border-radius: 14px; overflow: hidden; max-width: 30rem; }
   .media.one { grid-template-columns: 1fr; }

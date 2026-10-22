@@ -75,3 +75,28 @@ export function plain(text: string | null | undefined, extra?: Extra | null): st
   if (!s && r.quotes.length) s = 'A post'
   return s
 }
+
+// The first `limit` characters (links count by their label), cut at a word
+// when one is near. `cut` says whether anything was left out.
+export function clip(parts: Part[], limit: number): { parts: Part[]; cut: boolean } {
+  let left = limit
+  const out: Part[] = []
+  for (const p of parts) {
+    const len = [...(p.t === 'text' ? p.s : p.label)].length
+    if (len <= left) {
+      out.push(p)
+      left -= len
+      continue
+    }
+    if (p.t === 'text' && left > 0) {
+      let s = [...p.s].slice(0, left).join('')
+      const space = s.search(/\s\S*$/)
+      if (space > s.length - 40 && space > 0) s = s.slice(0, space)
+      out.push({ t: 'text', s })
+    }
+    const last = out[out.length - 1]
+    if (last?.t === 'text') last.s = last.s.replace(/\s+$/, '')
+    return { parts: out, cut: true }
+  }
+  return { parts: out, cut: false }
+}

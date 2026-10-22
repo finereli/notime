@@ -174,3 +174,22 @@ describe('links in posts', () => {
     expect(plain(null)).toBe('')
   })
 })
+
+describe('clip', () => {
+  it('cuts long text at a word and says so', async () => {
+    const { clip } = await import('../src/lib/rich')
+    const long = 'word '.repeat(100).trim()
+    const r = clip([{ t: 'text', s: long }], 280)
+    expect(r.cut).toBe(true)
+    const s = (r.parts[0] as { s: string }).s
+    expect(s.length).toBeLessThanOrEqual(280)
+    expect(s.endsWith('word')).toBe(true)
+  })
+
+  it('leaves short text alone and counts a link by its label', async () => {
+    const { clip } = await import('../src/lib/rich')
+    const parts = [{ t: 'text' as const, s: 'see ' }, { t: 'link' as const, href: 'https://a.b/c', label: 'a.b/c' }]
+    expect(clip(parts, 280)).toEqual({ parts, cut: false })
+    expect(clip(parts, 6)).toEqual({ parts: [{ t: 'text', s: 'see' }], cut: true })
+  })
+})
