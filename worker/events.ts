@@ -104,8 +104,26 @@ export function cleanPosts(list: unknown, media: any[] = []): XPost[] {
     .map((p: any) => ({ id: String(p.id), text: fullText(p)!, author_id: p.author_id ? String(p.author_id) : undefined, created_at: p.created_at, reply_to: replyTo(p), extra: extraOf(p, media) }))
 }
 
+// A reply carries everyone above it in the thread as a hidden "Replying to
+// @a @b" prefix, and X's API counts each of them as mentioned. Only a
+// handle in the words themselves names the owner. null when X sent no
+// mention entities to tell by.
+export function namedIn(post: any, ownerId: string): boolean | null {
+  const ms = post?.entities?.mentions
+  if (!Array.isArray(ms) || !ms.length) return null
+  const sorted = [...ms].sort((a, b) => a.start - b.start)
+  // The prefix is the handles back to back from the start of the text.
+  let end = -1
+  let i = 0
+  while (i < sorted.length && sorted[i].start === end + 1) end = sorted[i++].end
+  const body = [...sorted.slice(i), ...(post?.note_tweet?.entities?.mentions ?? [])]
+  return body.some((m: any) => String(m?.id) === ownerId)
+}
+
 export function postNotification(type: NotificationType, post: any, ownerId: string): Notification | null {
   if (!post?.id || !post.author_id || String(post.author_id) === ownerId) return null
+  // Someone answering someone else further down the owner's thread.
+  if (type === 'mention' && ref(post, 'replied_to') && namedIn(post, ownerId) === false) return null
   const target = type === 'reply' ? ref(post, 'replied_to') ?? post.in_reply_to_tweet_id ?? null
     : type === 'quote' ? ref(post, 'quoted')
     : null

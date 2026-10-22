@@ -206,6 +206,21 @@ describe('events', () => {
     expect(mentionNotification({ id: '62', text: 'x', author_id: '2001' }, OWNER)).toMatchObject({ type: 'mention' })
   })
 
+  it('leaves out a reply to someone else that only has the owner in its "Replying to" prefix', () => {
+    const reply = (mentions: any[], note?: any[]) => ({
+      id: '70', text: '@marcel @finereli It is a good idea', author_id: '2001', in_reply_to_user_id: '3003',
+      referenced_tweets: [{ type: 'replied_to', id: '42' }], entities: { mentions }, ...(note ? { note_tweet: { text: 'x', entities: { mentions: note } } } : {}),
+    })
+    const marcel = { start: 0, end: 7, id: '3003' }
+    const owner = { start: 8, end: 17, id: OWNER }
+    expect(mentionNotification(reply([marcel, owner]), OWNER)).toBe(null)
+    // Named in the words: a mention.
+    expect(mentionNotification(reply([marcel, owner, { start: 30, end: 39, id: OWNER }]), OWNER)).toMatchObject({ type: 'mention' })
+    expect(mentionNotification(reply([marcel, owner], [{ start: 5, end: 14, id: OWNER }]), OWNER)).toMatchObject({ type: 'mention' })
+    // Not a reply, so a handle up front is the owner being addressed.
+    expect(mentionNotification({ id: '71', text: '@finereli look', author_id: '2001', entities: { mentions: [{ start: 0, end: 9, id: OWNER }] } } as any, OWNER)).toMatchObject({ type: 'mention' })
+  })
+
   it('writes push text that says who did what', () => {
     expect(pushText('reply', 'Ana Lima', 'agreed')).toEqual({ title: 'Ana Lima replied', body: 'agreed' })
     expect(pushText('quote', 'Ana Lima', 'this')).toEqual({ title: 'Ana Lima quoted you', body: 'this' })
