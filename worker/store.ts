@@ -202,6 +202,35 @@ export async function chainOf(db: D1Database, row: Record<string, any>) {
   return chain
 }
 
+// For a reply to someone else further down the owner's thread: the posts
+// above it, oldest first, back to the owner's own. Posts we have not seen are
+// looked up once (half a cent each) and kept.
+export async function threadOf(env: Env, x: X, token: () => Promise<string>, row: Record<string, any>, ownerId: string) {
+  const db = env.DB
+  if (row.type !== 'mention' || !row.post_id) return []
+  const out: Record<string, any>[] = []
+  const seen = new Set<string>()
+  let cur = (await db.prepare(`SELECT reply_to FROM x_posts WHERE id = ?1`).bind(row.post_id).first<{ reply_to: string | null }>())?.reply_to ?? null
+  while (cur && !seen.has(cur) && out.length < 6) {
+    seen.add(cur)
+    const get = () => db
+      .prepare(`SELECT p.id, p.author_id, p.text, p.created_at, p.reply_to, p.extra, u.username, u.name, u.avatar FROM x_posts p LEFT JOIN x_users u ON u.id = p.author_id WHERE p.id = ?1`)
+      .bind(cur).first<Record<string, any>>()
+    let p = await get()
+    if (!p || !p.username) {
+      const fetched = await x.getPost(await token(), cur).catch(() => null)
+      if (fetched) await savePosts(db, [fetched])
+      if (fetched?.author) await saveUsers(db, [fetched.author])
+      p = await get()
+    }
+    if (!p) break
+    out.unshift({ ...p, extra: parseExtra(p.extra), mine: p.author_id === ownerId })
+    if (p.author_id === ownerId) break
+    cur = p.reply_to || null
+  }
+  return out
+}
+
 // Fill in the author, and the post being answered, when X left them out of
 // the event. Each lookup is paid for once and then kept.
 export async function hydrate(env: Env, x: X, token: string, n: { actor_id: string; target_post_id: string | null; type: string }) {

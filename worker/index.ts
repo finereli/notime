@@ -6,7 +6,7 @@ import { XError, call, fakeX, realX, type PostBody, type X, type XUser } from '.
 import { ChatError, NotOnChat, forget, ingestChat, isUnlocked, openChat, sendChat, syncInbox, syncPartner, unlock } from './chat'
 import { runtime as chatRuntime } from './chat-engine'
 import { crcResponse, verifySignature } from './webhook'
-import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
+import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, threadOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { pushRoutes } from './push-routes'
 import { SETUP_VERSION, repair, status } from './setup'
 import { monthToDate } from './usage'
@@ -285,7 +285,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
       await hydrate(env, x, await token(), row as any)
       row = (await getNotification(db, id))!
     }
-    return json({ ...row, chain: await chainOf(db, row) })
+    return json({ ...row, chain: await chainOf(db, row), thread: await threadOf(env, x, token, row, acct.x_user_id) })
   }
 
   // --- posting --------------------------------------------------------------

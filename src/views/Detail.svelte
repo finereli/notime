@@ -20,12 +20,15 @@
   // fills in the author or the original post if they were missing.
   let item = $state<Item | null>(notifications.items.find((i) => i.id === id) ?? null)
   let chain = $state<Item[]>([])
+  // A reply to someone else under your post: the posts above it, back to yours.
+  interface Above { id: string; text: string; created_at: string; extra?: Item['extra']; username: string | null; name: string | null; avatar: string | null; mine: boolean }
+  let thread = $state<Above[]>([])
   let missing = $state(false)
   let sent = $state<Sent | null>(null)
 
   $effect(() => {
-    apiJson<Item & { chain: Item[] }>(`/api/notifications/${encodeURIComponent(id)}`)
-      .then(({ chain: before, ...full }) => { item = full; chain = before })
+    apiJson<Item & { chain: Item[]; thread?: Above[] }>(`/api/notifications/${encodeURIComponent(id)}`)
+      .then(({ chain: before, thread: above, ...full }) => { item = full; chain = before; thread = above ?? [] })
       .catch(() => { if (!item) missing = true })
   })
 
@@ -67,6 +70,19 @@
           <p dir="auto"><Rich text={c.text} extra={c.extra} /></p>
         </div>
       </div>
+    {/each}
+    {#each thread as t (t.id)}
+      {#if t.mine}
+        <p class="yours" dir="auto"><span>You wrote</span>{plain(t.text, t.extra)}</p>
+      {:else}
+        <div class="earlier">
+          <Avatar src={t.avatar} name={displayName(t)} size={28} />
+          <div>
+            <p class="who"><strong>{displayName(t)}</strong> <time>{ago(t.created_at)}</time></p>
+            <p dir="auto"><Rich text={t.text} extra={t.extra} /></p>
+          </div>
+        </div>
+      {/if}
     {/each}
     {#if item.target_text}
       <p class="yours" dir="auto"><span>{chain.length ? 'You' : 'You wrote'}</span>{plain(item.target_text, item.target_extra)}</p>
