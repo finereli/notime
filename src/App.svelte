@@ -84,6 +84,11 @@
 
   // Installed apps open outside links in the real browser.
   if (matchMedia('(display-mode: standalone)').matches) {
+    // Mark this window as the installed app (the query survives hash
+    // navigation) and tell the service worker the app is installed here, so
+    // a tapped notification opens the app rather than a browser tab.
+    if (!new URLSearchParams(location.search).has('app')) history.replaceState(history.state, '', '/?app' + location.hash)
+    navigator.serviceWorker?.ready.then((r) => r.active?.postMessage({ type: 'installed' })).catch(() => {})
     document.addEventListener('click', (e) => {
       const a = (e.target as HTMLElement).closest?.('a[href]') as HTMLAnchorElement | null
       if (a && a.hostname !== location.hostname) { e.preventDefault(); window.open(a.href, '_blank') }

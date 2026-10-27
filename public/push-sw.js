@@ -1,4 +1,4 @@
-// pwa-kit: push/public/push-sw.js v1
+// pwa-kit: push/public/push-sw.js v2
 // Imported by the generated service worker: in vite.config's pwaOptions,
 //   workbox: { importScripts: ['/push-sw.js'], globIgnores: [..., '**/push-sw.js'] }
 // The browser byte-checks imported scripts on every update check, so a change
@@ -35,19 +35,33 @@ self.addEventListener('push', (event) => {
   )
 })
 
+// The installed app marks its window with ?app and says so once per launch.
+// Remembered in a cache, because the service worker itself does not live long.
+const MARK = '/__installed'
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'installed') {
+    event.waitUntil(caches.open('pwa-installed').then((c) => c.put(MARK, new Response('1'))).catch(() => {}))
+  }
+})
+const installed = () => caches.open('pwa-installed').then((c) => c.match(MARK)).then(Boolean).catch(() => false)
+const isApp = (w) => { try { return new URL(w.url).searchParams.has('app') } catch { return false } }
+
+// A tap goes to the installed app when there is one: its open window, or a
+// fresh launch (opening an in-scope URL starts the installed app on Android).
+// A browser tab is used only when the app is not installed on this device.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const url = (event.notification.data && event.notification.data.url) || '/'
   event.waitUntil(
     (async () => {
-      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      for (const w of windows) {
-        if ('focus' in w) {
-          w.postMessage({ type: 'open', url })
-          return w.focus()
-        }
+      const windows = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter((w) => 'focus' in w)
+      const app = windows.find(isApp)
+      const target = app || ((await installed()) ? null : windows[0])
+      if (target) {
+        target.postMessage({ type: 'open', url })
+        return target.focus()
       }
-      return self.clients.openWindow(url)
+      return self.clients.openWindow((await installed()) ? '/?app' + url.replace(/^\/?/, '') : url)
     })()
   )
 })
