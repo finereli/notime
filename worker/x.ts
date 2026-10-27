@@ -30,6 +30,14 @@ export interface Subscription { id: string; event_type: string; webhook_id?: str
 export interface PostsPage { posts: XPost[]; oldestId?: string }
 export interface MentionsPage { posts: XPost[]; users: XUser[]; parents: XPost[]; newestId?: string }
 export interface DmPage { dms: Dm[]; users: XUser[]; next?: string }
+// The parts of a profile the app shows, and how the owner stands with them.
+export interface XProfile extends XUser {
+  description?: string
+  location?: string
+  url?: string
+  public_metrics?: { followers_count?: number; following_count?: number; tweet_count?: number }
+  connection_status?: string[]
+}
 export interface Credits { total: number; free: number; prepaid: number; expires?: string }
 
 export class XError extends Error {
@@ -67,6 +75,13 @@ export interface X {
   sendDm(token: string, ownerId: string, partnerId: string, text: string): Promise<Dm>
   findUser(token: string, username: string): Promise<XUser | null>
   credits(token: string): Promise<Credits | null>
+  // Someone else's profile and their latest posts, replies and reposts left out.
+  profile(token: string, id: string): Promise<XProfile | null>
+  userPosts(token: string, id: string, sinceId?: string): Promise<XPost[]>
+  // Returns whether X now has the owner following them (false while a
+  // request to a protected account waits).
+  follow(token: string, ownerId: string, targetId: string): Promise<boolean>
+  unfollow(token: string, ownerId: string, targetId: string): Promise<void>
 }
 
 const API = 'https://api.x.com'
@@ -247,6 +262,41 @@ export function realX(env: Env): X {
       if (r?.data) await bump(db, 'user_read')
       return r?.data ?? null
     },
+    async profile(token, id) {
+      const fields = 'profile_image_url,name,username,description,location,url,public_metrics,connection_status,entities'
+      const r = await call('GET', `/2/users/${id}?user.fields=${fields}`, token).catch((e) => {
+        if (e instanceof XError && e.status === 404) return null
+        throw e
+      })
+      if (!r?.data) return null
+      await bump(db, 'user_read')
+      const d = r.data
+      // The bio's links come as t.co; show where they go.
+      const expand = (s: string | undefined, urls: any[] | undefined) =>
+        (urls ?? []).reduce((t: string, u: any) => (u?.url && u?.expanded_url ? t.split(u.url).join(u.display_url ?? u.expanded_url) : t), s ?? '')
+      return {
+        ...d,
+        description: expand(d.description, d.entities?.description?.urls),
+        url: d.entities?.url?.urls?.[0]?.expanded_url ?? d.url,
+      }
+    },
+    async userPosts(token, id, sinceId) {
+      const q = new URLSearchParams({ max_results: '10', exclude: 'retweets,replies', 'tweet.fields': POST_FIELDS, ...MEDIA })
+      if (sinceId) q.set('since_id', sinceId)
+      const r = await call('GET', `/2/users/${id}/tweets?${q}`, token)
+      const data = r?.data ?? []
+      await bump(db, 'post_read', data.length)
+      return cleanPosts(data, r?.includes?.media).map((p) => ({ ...p, author_id: id }))
+    },
+    async follow(token, ownerId, targetId) {
+      const r = await call('POST', `/2/users/${ownerId}/following`, token, { target_user_id: targetId })
+      await bump(db, 'follow')
+      return !!r?.data?.following
+    },
+    async unfollow(token, ownerId, targetId) {
+      await call('DELETE', `/2/users/${ownerId}/following/${targetId}`, token)
+      await bump(db, 'unfollow')
+    },
     async credits(token) {
       // The real balance, straight from X. Free to ask.
       const d = (await call('GET', '/2/usage/credits', token))?.data
@@ -342,5 +392,22 @@ export function fakeX(env: Env): X {
       return username === 'nobody' ? null : { id: '4' + username.length + '00', username, name: username[0].toUpperCase() + username.slice(1) }
     },
     async credits() { return { total: 19.81, free: 19.81, prepaid: 0, expires: '2027-01-09T16:20:47.000Z' } },
+    async profile(_t, id) {
+      const u = id === ana.id ? ana : { id, username: 'tomasz', name: 'Tomasz Nowak' }
+      return { ...u, description: 'Writes about small software and the people who make it. Lisbon.', location: 'Lisbon', url: 'https://example.com', public_metrics: { followers_count: 1234, following_count: 321, tweet_count: 4567 }, connection_status: id === ana.id ? ['followed_by'] : [] }
+    },
+    async userPosts(_t, id, sinceId) {
+      if (sinceId) return []
+      const now = Date.now()
+      return [
+        { id: '9501', text: 'Small tools win because you can hold all of them in your head at once.', author_id: id, created_at: new Date(now - 5 * 36e5).toISOString(), reply_to: '' },
+        { id: '9502', text: 'Spent the morning deleting code. Best morning this month.', author_id: id, created_at: new Date(now - 30 * 36e5).toISOString(), reply_to: '' },
+      ]
+    },
+    async follow(_t, _o, targetId) {
+      if (targetId === '0') throw new XError(403, 'You cannot follow this account.')
+      return true
+    },
+    async unfollow() {},
   }
 }

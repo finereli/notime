@@ -3,6 +3,7 @@
   // ones as they arrive and the open screen rereads when a push lands.
   import Avatar from '../components/Avatar.svelte'
   import Icon from '../components/Icon.svelte'
+  import FollowButton from '../components/FollowButton.svelte'
   import { autosize } from '../lib/autosize'
   import Rich from '../components/Rich.svelte'
   import { apiJson } from '../lib/api'
@@ -107,11 +108,14 @@
   {:else}
     {#if person}
       <header>
-        <Avatar src={person.avatar} name={displayName(person)} size={36} />
-        <div>
-          <strong>{displayName(person)}</strong>
-          {#if person.username}<a href={`https://x.com/${person.username}`} target="_blank" rel="noopener">@{person.username}</a>{/if}
-        </div>
+        <a class="person" href={`#/u/${id}`}>
+          <Avatar src={person.avatar} name={displayName(person)} size={36} />
+          <div>
+            <strong>{displayName(person)}</strong>
+            {#if person.username}<span class="handle">@{person.username}</span>{/if}
+          </div>
+        </a>
+        <FollowButton {id} />
       </header>
     {/if}
 
@@ -156,7 +160,8 @@
   header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
   header div { display: flex; flex-direction: column; min-width: 0; }
   header strong { font-weight: 500; }
-  header a { font-size: 0.8rem; color: var(--text-secondary); text-decoration: none; }
+  .person { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
+  .handle { font-size: 0.8rem; color: var(--text-secondary); }
 
   .messages { flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 8px 14px 14px; }
   .older { align-self: center; margin: 4px auto 8px; }

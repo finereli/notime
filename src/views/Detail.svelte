@@ -1,6 +1,7 @@
 <script lang="ts">
   import Avatar from '../components/Avatar.svelte'
   import Composer from '../components/Composer.svelte'
+  import FollowButton from '../components/FollowButton.svelte'
   import Icon from '../components/Icon.svelte'
   import Rich from '../components/Rich.svelte'
   import { plain } from '../lib/rich'
@@ -21,7 +22,7 @@
   let item = $state<Item | null>(notifications.items.find((i) => i.id === id) ?? null)
   let chain = $state<Item[]>([])
   // A reply to someone else under your post: the posts above it, back to yours.
-  interface Above { id: string; text: string; created_at: string; extra?: Item['extra']; username: string | null; name: string | null; avatar: string | null; mine: boolean }
+  interface Above { id: string; author_id: string; text: string; created_at: string; extra?: Item['extra']; username: string | null; name: string | null; avatar: string | null; mine: boolean }
   let thread = $state<Above[]>([])
   let missing = $state(false)
   let sent = $state<Sent | null>(null)
@@ -64,7 +65,7 @@
     {#each chain as c (c.id)}
       {#if c.target_text}<p class="yours" dir="auto"><span>You</span>{plain(c.target_text, c.target_extra)}</p>{/if}
       <div class="earlier">
-        <Avatar src={c.avatar} name={displayName(c)} size={28} />
+        <a href={`#/u/${c.actor_id}`} aria-label={displayName(c)}><Avatar src={c.avatar} name={displayName(c)} size={28} /></a>
         <div>
           <p class="who"><strong>{displayName(c)}</strong> <time>{ago(c.created_at)}</time></p>
           <p dir="auto"><Rich text={c.text} extra={c.extra} limit={280} /></p>
@@ -76,7 +77,7 @@
         <p class="yours" dir="auto"><span>You wrote</span>{plain(t.text, t.extra)}</p>
       {:else}
         <div class="earlier">
-          <Avatar src={t.avatar} name={displayName(t)} size={28} />
+          <a href={`#/u/${t.author_id}`} aria-label={displayName(t)}><Avatar src={t.avatar} name={displayName(t)} size={28} /></a>
           <div>
             <p class="who"><strong>{displayName(t)}</strong> <time>{ago(t.created_at)}</time></p>
             <p dir="auto"><Rich text={t.text} extra={t.extra} limit={280} /></p>
@@ -90,11 +91,14 @@
 
     <article>
       <header>
-        <Avatar src={item.avatar} name={displayName(item)} size={44} />
-        <div>
-          <strong>{displayName(item)}</strong>
-          {#if item.username}<span class="handle">@{item.username}</span>{/if}
-        </div>
+        <a class="person" href={`#/u/${item.actor_id}`}>
+          <Avatar src={item.avatar} name={displayName(item)} size={44} />
+          <div>
+            <strong>{displayName(item)}</strong>
+            {#if item.username}<span class="handle">@{item.username}</span>{/if}
+          </div>
+        </a>
+        <FollowButton id={item.actor_id} />
         <time>{ago(item.created_at)}</time>
       </header>
       <div class="text" dir="auto"><Rich text={item.text} extra={item.extra} limit={280} /></div>
@@ -133,7 +137,8 @@
   .yours span { display: block; font-size: 0.75rem; margin-bottom: 2px; }
 
   header { display: flex; align-items: center; gap: 12px; }
-  header div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .person { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
+  header .person div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   header strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .handle, time { font-size: 0.8rem; color: var(--text-secondary); }
   time { font-variant-numeric: tabular-nums; }

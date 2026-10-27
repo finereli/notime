@@ -9,6 +9,7 @@ export type Route =
   | { view: 'settings' }
   | { view: 'messages' }
   | { view: 'chat'; id: string }
+  | { view: 'profile'; id: string }
 
 export const router = new Router<Route>({
   home: '/',
@@ -20,6 +21,8 @@ export const router = new Router<Route>({
     if (post) return { view: 'post', id: post[1], quote: !!post[2] }
     const chat = path.match(/^\/m\/(\d+)$/)
     if (chat) return { view: 'chat', id: chat[1] }
+    const profile = path.match(/^\/u\/(\d+)$/)
+    if (profile) return { view: 'profile', id: profile[1] }
     if (path === '/messages') return { view: 'messages' }
     if (path === '/posts') return { view: 'posts' }
     if (path === '/notifications') return { view: 'notifications' }

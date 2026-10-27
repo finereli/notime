@@ -72,7 +72,7 @@
         {#each dms.items as c (c.partner_id)}
           <li class:unread={c.unread > 0}>
             <a href={`#/m/${c.partner_id}`}>
-              <Avatar src={c.avatar} name={displayName(c)} />
+              <span class="face" role="link" tabindex="-1" onclick={(e) => { e.preventDefault(); e.stopPropagation(); router.go(`/u/${c.partner_id}`) }} onkeydown={() => {}}><Avatar src={c.avatar} name={displayName(c)} /></span>
               <div class="main">
                 <p class="head"><strong>{displayName(c)}</strong><time>{ago(c.created_at)}</time></p>
                 <p class="text" dir="auto">{c.sender_id === auth.user?.id ? 'You: ' : ''}{plain(c.text, c.extra)}</p>

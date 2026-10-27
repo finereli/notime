@@ -26,6 +26,11 @@ account's API credit.
   them sealed with the `CHAT_SECRET` secret and decrypts with X's Chat XDK
   (WASM). See worker/chat.ts. People without encrypted chat still get the
   old unencrypted kind.
+- People: tap a face for their profile (bio, counts, latest posts, replies
+  and reposts left out) and follow or unfollow from there, from a reply or
+  from a conversation. A profile is a cent to look up and its posts half a
+  cent each, so both are kept: the profile for a day, the posts topped up at
+  most once an hour.
 - Push: replies, mentions, quotes and messages reach your phone.
 - Cost: the real credit balance from X, with the app's own tally of where it
   went.

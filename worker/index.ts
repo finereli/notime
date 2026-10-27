@@ -5,6 +5,7 @@ import { NeedsLogin, RefreshRejected, SCOPES, beginLogin, d1TokenStore, exchange
 import { XError, call, fakeX, realX, type PostBody, type X, type XUser } from './x'
 import { ChatError, NotOnChat, forget, ingestChat, isUnlocked, openChat, sendChat, syncInbox, syncPartner, unlock } from './chat'
 import { runtime as chatRuntime } from './chat-engine'
+import { person, postsOf, setFollow } from './people'
 import { crcResponse, verifySignature } from './webhook'
 import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, threadOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { pushRoutes } from './push-routes'
@@ -341,6 +342,29 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     const row = await lookPost(env, x, token, anyPost[2])
     if (!row || (!anyPost[1] && row.author_id !== acct.x_user_id)) return fail('not found', 404)
     return json(row)
+  }
+
+  // --- people: profiles and following (worker/people.ts) ---------------------
+  const person_ = pathname.match(/^\/api\/users\/(\d+)(\/follow)?$/)
+  if (person_) {
+    const id = person_[1]
+    if (person_[2] && (method === 'POST' || method === 'DELETE')) {
+      if (id === acct.x_user_id) return fail('That is you')
+      try {
+        const following = await setFollow(env, x, await token(), acct.x_user_id, id, method === 'POST')
+        return json({ i_follow: method === 'POST', pending: method === 'POST' && !following })
+      } catch (e) {
+        if (e instanceof XError && e.status === 403 && (await missingScopes()).includes('follows.write')) return fail('needs_scopes', 403)
+        throw e
+      }
+    }
+    if (!person_[2] && method === 'GET') {
+      const user = await person(env, x, token, id, url.searchParams.has('fresh'))
+      if (!user) return fail('There is no such account on X', 404)
+      // ?posts=0 is for a follow button: just the person.
+      const posts = url.searchParams.get('posts') === '0' ? [] : await postsOf(env, x, token, id).catch(() => [])
+      return json({ user, posts, me: id === acct.x_user_id })
+    }
   }
 
   // --- direct messages ------------------------------------------------------

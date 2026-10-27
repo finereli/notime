@@ -19,6 +19,7 @@
   import Settings from './views/Settings.svelte'
   import Messages from './views/Messages.svelte'
   import Chat from './views/Chat.svelte'
+  import Profile from './views/Profile.svelte'
   import { apiJson } from './lib/api'
   import { keepPush } from './lib/push'
   import { auth, type User } from './lib/auth.svelte'
@@ -41,7 +42,8 @@
   const detailId = $derived(router.route.view === 'detail' ? router.route.id : '')
   const postRoute = $derived(router.route.view === 'post' ? router.route : null)
   const chatId = $derived(router.route.view === 'chat' ? router.route.id : '')
-  const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', posts: 'Posts', post: 'Post', settings: 'Settings', messages: 'Messages', chat: 'Message' }[view])
+  const profileId = $derived(router.route.view === 'profile' ? router.route.id : '')
+  const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', posts: 'Posts', post: 'Post', settings: 'Settings', messages: 'Messages', chat: 'Message', profile: 'Profile' }[view])
   const entries = $derived([
     { label: 'Write', hash: '/', current: view === 'write' },
     { label: 'Notifications', hash: '/notifications', current: view === 'notifications' || view === 'detail', count: notifications.unread || undefined },
@@ -122,6 +124,8 @@
       <TopBar leading="back" {title} onleading={() => router.back('/posts')} />
     {:else if view === 'chat'}
       <TopBar leading="back" {title} onleading={() => router.back('/messages')} />
+    {:else if view === 'profile'}
+      <TopBar leading="back" {title} onleading={() => router.back('/notifications')} />
     {:else if view === 'posts'}
       <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for posts made elsewhere" ontrailing={refreshPosts}>
         {#snippet trailing()}
@@ -145,8 +149,8 @@
     {/if}
 
     <main class="body">
-      {#if prefs.missingScopes.length && (view === 'notifications' || view === 'detail')}
-        <p class="grant">notime can now see your likes on X and read your messages. <button onclick={() => auth.signIn()}>Sign in again</button> to allow it.</p>
+      {#if prefs.missingScopes.length && (view === 'notifications' || view === 'detail' || view === 'profile')}
+        <p class="grant">notime can now follow people for you. <button onclick={() => auth.signIn()}>Sign in again</button> to allow it.</p>
       {/if}
       {#if view === 'notifications'}
         <Notifications />
@@ -160,6 +164,8 @@
         <Messages />
       {:else if chatId}
         {#key chatId}<Chat id={chatId} />{/key}
+      {:else if profileId}
+        {#key profileId}<Profile id={profileId} />{/key}
       {:else if view === 'settings'}
         <Settings />
       {:else}

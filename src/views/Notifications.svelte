@@ -2,6 +2,7 @@
   import Avatar from '../components/Avatar.svelte'
   import Icon from '../components/Icon.svelte'
   import Rich from '../components/Rich.svelte'
+  import { router } from '../lib/router.svelte'
   import { plain } from '../lib/rich'
   import { notifications } from '../lib/notifications.svelte'
   import { VERB, collapse, crowd, cumulative, displayName } from '../lib/collapse'
@@ -66,7 +67,8 @@
             </svelte:element>
           {:else}
           <a class="post" href={`#/n/${encodeURIComponent(last.id)}`}>
-            <Avatar src={last.avatar} name={displayName(last)} />
+            <!-- The face opens their profile; the rest of the row, the reply. -->
+            <span class="face" role="link" tabindex="-1" onclick={(e) => { e.preventDefault(); e.stopPropagation(); router.go(`/u/${last.actor_id}`) }} onkeydown={() => {}}><Avatar src={last.avatar} name={displayName(last)} /></span>
             <div class="main">
               <p class="head">
                 <strong>{displayName(last)}</strong>

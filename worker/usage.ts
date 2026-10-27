@@ -19,6 +19,8 @@ export const PRICES: Record<string, number> = {
   like_read: 0.001,
   dm_read: 0.01,
   dm_send: 0.015,
+  follow: 0.015,
+  unfollow: 0.01,
 }
 
 export async function bump(db: D1Database, kind: string, n = 1): Promise<void> {
