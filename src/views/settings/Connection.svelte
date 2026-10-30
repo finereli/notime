@@ -34,7 +34,7 @@
 
 <section class="gaps">
   <h3>Missed deliveries</h3>
-  <p class="hint">X sometimes skips a delivery, and says nothing when it does. If something is on X but not here, ask X to resend the last 24 hours. What you already have is skipped.</p>
+  <p class="hint">X sometimes skips a delivery, and says nothing when it does. So every hour notime asks X to resend the last two hours; what you already have is skipped, and X does not bill a delivery twice in a day. If something older is on X but not here, ask for the last 24 hours.</p>
   <div class="row"><button class="btn plain" onclick={() => s.replay()} disabled={s.replaying}>{s.replaying ? 'Asking X' : 'Resend the last 24 hours'}</button></div>
   {#if s.replayNote}<p class="quiet" role="status">{s.replayNote}</p>{/if}
 </section>

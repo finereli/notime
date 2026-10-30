@@ -89,10 +89,15 @@ event, and sends a web push where one is due. X delivers on a best-effort
 basis. It documents no delivery guarantee, and developers report dropped
 and late deliveries on its forum through 2026. On 30 October 2026 it sent
 nothing for nine hours while four encrypted messages came in. There is no
-refresh button to make up for it (see the top of this file). Instead,
-`webhook_log` records every delivery, rejected call and decrypt failure, so
-a gap can be traced, and Settings → Connection to X can ask X to replay the
-last 24 hours of deliveries. `/api/notifications/check` and `/api/dms/check`
+refresh button to make up for it (see the top of this file). Instead, every
+hour (a cron at :55) the Worker asks X to replay the last two hours of
+deliveries (`POST /2/webhooks/replay`), never reaching back past UTC
+midnight: X bills an event once per UTC day however often it is delivered,
+and duplicates are dropped by event id, so this closes gaps at no extra
+cost. On 30 October a replay brought back the messages X had skipped.
+`webhook_log` records every delivery, rejected call, replay and decrypt
+failure, and Settings → Connection to X can replay the last 24 hours by
+hand. `/api/notifications/check` and `/api/dms/check`
 are kept on the server for a future automatic safety net.
 
 Like counts are not delivered: likes by others are billed per event, so the

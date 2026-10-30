@@ -120,14 +120,29 @@ export async function repair(env: Env, x: X, token: string, origin: string, owne
 // X drops deliveries now and then. Replay asks it to resend everything it
 // delivered or tried to in the last 24 hours (its limit); what arrives twice
 // is ignored by event id, so the only cost is what X charges for the resend.
-export async function replay(env: Env, x: X, origin: string): Promise<{ job: string; from: string; to: string }> {
-  const hook = (await x.listWebhooks()).find((w) => w.url === webhookUrl(origin))
+export async function replay(env: Env, x: X, origin: string | null, hours = 24): Promise<{ job: string; from: string; to: string }> {
+  const hooks = await x.listWebhooks()
+  // The scheduled run has no request to take the origin from; there is one
+  // delivery address, and it is ours.
+  const hook = origin ? hooks.find((w) => w.url === webhookUrl(origin)) : hooks.find((w) => w.url.endsWith('/api/webhook/x'))
   if (!hook) throw new XError(404, 'There is no delivery address to replay to. Repair the connection first.')
   const to = new Date(Date.now() - 60_000)
-  const from = new Date(to.getTime() - 24 * 3600_000 + 5 * 60_000)
+  const from = new Date(Math.max(to.getTime() - hours * 3600_000 + 5 * 60_000, hours < 24 ? Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()) : 0))
   const job = await x.replayWebhook(hook.id, from, to)
   await logWebhook(env.DB, 'replay', null, `job ${job}, ${from.toISOString()} to ${to.toISOString()}`)
   return { job, from: from.toISOString(), to: to.toISOString() }
+}
+
+// Every hour at :55, resend the last two hours, never reaching back past
+// UTC midnight. X bills an event once per UTC day however often it is
+// delivered, so this catches what X dropped at no extra cost; a gap is
+// closed within the hour instead of waiting for the owner to notice.
+export async function scheduledReplay(env: Env, x: X): Promise<void> {
+  try {
+    await replay(env, x, null, 2)
+  } catch (e) {
+    await logWebhook(env.DB, 'failed', 'replay', say(e))
+  }
 }
 
 export async function deliveryLog(db: D1Database, limit = 30) {

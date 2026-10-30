@@ -9,7 +9,7 @@ import { person, postsOf, setFollow } from './people'
 import { crcResponse, verifySignature } from './webhook'
 import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, threadOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, logWebhook, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { pushRoutes } from './push-routes'
-import { SETUP_VERSION, deliveryLog, repair, replay, status } from './setup'
+import { SETUP_VERSION, deliveryLog, repair, replay, scheduledReplay, status } from './setup'
 import { monthToDate } from './usage'
 import { mcpRequest } from './mcp'
 import { approve, authorize, bearerOk, discovery, listClients, pendingExists, preflight, register, revoke, token as oauthToken, unauthorized } from './mcp-auth'
@@ -50,6 +50,11 @@ export default {
       console.error('unhandled', e)
       return fail('Something went wrong on the server', 500)
     }
+  },
+
+  // The hourly safety net under X's webhook (see scheduledReplay).
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(scheduledReplay(env, realX(env)))
   },
 } satisfies ExportedHandler<Env>
 
