@@ -130,19 +130,19 @@ opens: that made opening the app a way to check for likes.
 ## Running it locally
 
     npm install
-    node scripts/vapid.mjs        # once: makes the push keys, appends to .env
+    node scripts/vapid.mjs mailto:you@example.com   # once: push keys, into .env
     node scripts/dev-vars.mjs     # writes .dev.vars from .env
     npx wrangler d1 migrations apply notime-db --local
     npm run dev                   # builds, then serves http://127.0.0.1:8787
 
-With `DEV_AUTH=allow` in `.dev.vars` (the default from the script) the Worker
-talks to a stand-in for X: signing in is instant, posting goes nowhere, and a
+This needs no X account. With `DEV_AUTH=allow` in `.dev.vars` (the default
+from the script) the Worker talks to a stand-in for X: signing in is instant, posting goes nowhere, and a
 post containing `#fail` is refused so you can see what refusal looks like.
 The bypass needs both that variable and a local hostname.
 
-To sign in with the real X locally, run `node scripts/dev-vars.mjs --real`
-and use `http://127.0.0.1:8787` exactly. That address is registered as a
-callback with X; `localhost` is not.
+To sign in with the real X locally, fill in `.env` (see below), run
+`node scripts/dev-vars.mjs --real` and use `http://127.0.0.1:8787` exactly:
+that is the address to register as a callback with X; `localhost` is not.
 
     npm test                      # unit tests
     node test/e2e.mjs             # the whole app in a headless phone (CHROME_PATH to pick a browser)
@@ -152,31 +152,55 @@ callback with X; `localhost` is not.
 
 The browser scripts need `npm run dev` running in another terminal.
 
-## Deploying
+## Run your own
 
-    npx wrangler d1 create notime-db          # put the id in wrangler.jsonc
-    npx wrangler d1 migrations apply notime-db --remote
-    node scripts/secrets.mjs                  # pushes secrets from .env
-    npm run deploy
+notime is one person's app: each copy belongs to one X account and spends
+that account's API credit. To run yours you need an X developer account on
+the pay-per-use plan with some credit, a Cloudflare account, and a domain
+on Cloudflare (or a `workers.dev` address).
 
-Then open the site and sign in. Signing in registers the webhook with X and
-creates the nine subscriptions (see `EVENTS` in worker/setup.ts). The X app
-needs "Read and write and Direct message" permissions in the developer
-console for messages to work. Settings shows whether each subscription
-took, with X's own error text if it did not, and a button to try again.
+1. **The X app.** In the X developer console, create an app. Under User
+   authentication settings: OAuth 2.0, type Web App, permissions "Read and
+   write and Direct message". Callback URLs:
+   `https://<your-domain>/api/auth/callback`, and for local development
+   `http://127.0.0.1:8787/api/auth/callback`. Website: your domain.
+2. **Keys.** Copy `.env.example` to `.env` and fill in the four X values
+   from Keys and tokens. Make the push keys:
+   `node scripts/vapid.mjs https://<your-domain>`.
+3. **Make it yours.** In `wrangler.jsonc`, set `routes` to your domain (or
+   remove `routes` to use `<name>.<you>.workers.dev`) and `OWNER_USERNAME`
+   to your X handle. The Worker refuses every other account, since every
+   call is billed to yours.
+4. **The database.**
+
+       npx wrangler d1 create notime-db          # put the id in wrangler.jsonc
+       npx wrangler d1 migrations apply notime-db --remote
+
+5. **Secrets and deploy.**
+
+       node scripts/secrets.mjs                  # pushes .env to the Worker
+       openssl rand -base64 32 | npx wrangler secret put CHAT_SECRET
+       npm run deploy
+
+6. **Sign in** at your domain. Signing in registers the webhook with X and
+   creates the nine subscriptions (see `EVENTS` in worker/setup.ts).
+   Settings → Connection to X shows whether each took, with X's own error
+   text if not, and a button to try again. Install the app on your phone
+   (Add to Home Screen), then Settings → Notifications on this device.
+   For encrypted messages, Settings → Encrypted messages asks once for your
+   X Chat PIN.
+
 When a release asks X for a new permission (following did), sign in again
 once; the app says so at the top of Notifications.
 
-Secrets the Worker expects: `X_CLIENT_ID`, `X_CLIENT_SECRET`,
-`X_BEARER_TOKEN`, `X_CONSUMER_SECRET`, `VAPID_PUBLIC_KEY`,
-`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. They live in `.env`, which is not in
-git. Do not regenerate the VAPID keys once phones have subscribed: every
-existing subscription would silently stop working.
+Do not regenerate the VAPID keys once phones have subscribed: every
+existing subscription would silently stop working. `CHAT_SECRET` lives only
+on the Worker; it seals the X Chat keys in D1, and changing it only means
+entering the PIN again.
 
-`CHAT_SECRET` is separate: random bytes set straight on the Worker
-(`openssl rand -base64 32 | npx wrangler secret put CHAT_SECRET`) and kept
-nowhere else. It seals the X Chat keys in D1. Changing it only means
-entering the X Chat PIN in Settings again.
+`CLAUDE.md` holds the working rules for the AI coding agent that builds
+this app with its owner. It is also the shortest statement of what the app
+will and will not do.
 
 ## What X charges
 
@@ -186,3 +210,9 @@ back, half a cent per reply, mention or quote delivered and a cent per
 message. Looking up a person is a cent, someone else's post half a cent, a
 message read a cent, a follow a cent and a half. The app caches every user
 and post it looks up, never polls, and shows a running estimate in Settings.
+
+## License
+
+MIT, see `LICENSE`. Icons are Google's Material Symbols (Apache 2.0). X Chat
+encryption uses X's Chat XDK and the Juicebox SDK (both MIT). The `shared/`
+files come from [pwa-kit](https://github.com/finereli/pwa-kit) (MIT).

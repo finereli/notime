@@ -1,6 +1,12 @@
 {
   "name": "notime",
   "version": "0.1.0",
+  "description": "Focus mode for X: write, see what needs an answer, answer it. A single-user PWA on Cloudflare Workers.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/finereli/notime"
+  },
   "private": true,
   "type": "module",
   "scripts": {

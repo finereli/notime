@@ -5,6 +5,6 @@ import { writeFileSync } from 'node:fs'
 import { readEnv, workerSecrets } from './env.mjs'
 
 const real = process.argv.includes('--real')
-const vars = { ...workerSecrets(readEnv()), APP_ORIGIN: 'http://127.0.0.1:8787', ...(real ? {} : { DEV_AUTH: 'allow' }) }
+const vars = { ...workerSecrets(readEnv(), { fake: !real }), APP_ORIGIN: 'http://127.0.0.1:8787', ...(real ? {} : { DEV_AUTH: 'allow' }) }
 writeFileSync('.dev.vars', Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n') + '\n')
 console.log(`Wrote .dev.vars (${Object.keys(vars).length} values, ${real ? 'real X' : 'fake X'})`)
