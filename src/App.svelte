@@ -108,6 +108,14 @@
     setDarkMode(dark)
   }
 
+  async function checkDms() {
+    try {
+      await dms.check()
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : 'Could not check X')
+    }
+  }
+
   async function check() {
     try {
       await notifications.check()
@@ -141,6 +149,12 @@
       <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Notifications" ontrailing={() => router.go('/notifications')}>
         {#snippet trailing()}
           <span class="bell"><Icon name="notifications" />{#if notifications.unread || dms.unread}<i></i>{/if}</span>
+        {/snippet}
+      </TopBar>
+    {:else if view === 'messages'}
+      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for missed messages" ontrailing={checkDms}>
+        {#snippet trailing()}
+          <span class:turning={dms.checking}><Icon name="refresh" /></span>
         {/snippet}
       </TopBar>
     {:else if view === 'notifications'}

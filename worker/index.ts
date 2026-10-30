@@ -3,7 +3,7 @@ import { appOrigin, isDev } from './dev'
 import { bearer, createSession, deleteSession, validateSession } from './sessions'
 import { NeedsLogin, RefreshRejected, SCOPES, beginLogin, d1TokenStore, exchangeCode, freshToken, refreshGrant, takeVerifier, type TokenSet } from './oauth'
 import { XError, call, fakeX, realX, type PostBody, type X, type XUser } from './x'
-import { ChatError, NotOnChat, forget, ingestChat, isUnlocked, openChat, sendChat, syncInbox, syncPartner, unlock } from './chat'
+import { ChatError, NotOnChat, checkInbox, forget, ingestChat, isUnlocked, openChat, sendChat, syncInbox, syncPartner, unlock } from './chat'
 import { runtime as chatRuntime } from './chat-engine'
 import { person, postsOf, setFollow } from './people'
 import { crcResponse, verifySignature } from './webhook'
@@ -393,6 +393,19 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   if (pathname === '/api/chat/lock' && method === 'POST') {
     await forget(env)
     return json({ unlocked: false })
+  }
+
+  // The refresh button on Messages: what the webhook may have missed.
+  if (pathname === '/api/dms/check' && method === 'POST') {
+    const chat = dev ? null : await openChat(env, chatRuntime, acct.x_user_id)
+    if (!chat) return json({ added: dev ? 0 : await syncDms(env, x, await token(), acct.x_user_id).catch(() => 0) })
+    try {
+      const people = await checkInbox(env, chat, call, await token(), acct.x_user_id)
+      for (const p of people) await knowUser(p)
+      return json({ added: people.length })
+    } finally {
+      chat.free()
+    }
   }
 
   if (pathname === '/api/dms/find' && method === 'POST') {

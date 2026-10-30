@@ -307,6 +307,36 @@ export async function syncInbox(env: Env, chat: any, call: Call, token: string, 
   return partners
 }
 
+// The safety net under the webhook, which X delivers on a best-effort basis:
+// look at the latest event of each recent conversation (a cent each) and
+// read the conversation properly only where there is something we have not
+// seen. Returns the people with new messages.
+export async function checkInbox(env: Env, chat: any, call: Call, token: string, ownerId: string, conversations = 8): Promise<string[]> {
+  const db = env.DB
+  const r = await call('GET', `/2/chat/conversations?max_results=${conversations}`, token)
+  const changed: string[] = []
+  for (const c of r?.data ?? []) {
+    if (c.type && c.type !== 'direct') continue
+    const conv = convKey(String(c.id))
+    const partner = partnerOf(conv, ownerId)
+    if (!partner) continue
+    try {
+      const latest = await call('GET', `/2/chat/conversations/${conv}/events?max_results=1`, token)
+      await bump(db, 'dm_read', latest?.data?.length ?? 0)
+      const id = latest?.data?.[0]?.id ? String(latest.data[0].id) : null
+      const key = 'chat_seen:' + conv
+      if (!id || (await getSetting(db, key)) === id) continue
+      if (!(await db.prepare(`SELECT 1 AS ok FROM dms WHERE id = ?1`).bind(id).first())) {
+        if ((await syncConversation(env, chat, call, token, ownerId, conv, 10)).length) changed.push(partner)
+      }
+      await setSetting(db, key, id)
+    } catch (e) {
+      console.error('chat check failed', conv, e)
+    }
+  }
+  return changed
+}
+
 // One webhook delivery. Returns the message when it is new and from someone
 // else, so the caller can push it.
 export async function ingestChat(env: Env, rt: ChatRuntime, call: Call, getToken: () => Promise<string>, event: any, ownerId: string): Promise<Dm | null> {
