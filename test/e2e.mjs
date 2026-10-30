@@ -209,13 +209,8 @@ assert.equal(await page.getByText('A follow-up, a day later').count(), 0, 'Posts
 await page.locator('li', { hasText: 'The best feature request' }).getByRole('link', { name: 'Quote' }).click()
 await page.getByLabel('Post text').fill('Still true.')
 await page.getByRole('button', { name: 'Quote', exact: true }).click()
-await page.locator('.error').waitFor()
-assert.match(await page.locator('.error').innerText(), /not available on your current plan/)
-await shot('08d-quote-refused')
-await page.getByRole('button', { name: 'quote with a link instead' }).click()
-assert.match(await page.getByLabel('Post text').inputValue(), /^Still true\. https:\/\/x\.com\/finereli\/status\/7500$/)
-await page.getByText('Posts with a link cost $0.20 to send.').waitFor()
-await page.getByLabel('Post text').fill('')
+await page.getByText('Quoted.').waitFor()
+await shot('08d-quoted')
 
 // --- long posts: no setting; when X will not say, X decides at send time ---
 await page.goto(BASE + '/#/')

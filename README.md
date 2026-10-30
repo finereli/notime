@@ -45,8 +45,7 @@ open for no reason is a regression.
   who can reply. Long posts are allowed if the account has Premium.
 - Your posts: the ones you made, here or on X, with their like counts. From
   one you can add a follow-up (a reply to yourself, which X shows as a
-  thread) or quote it, which posts a link to it, since X sells real quote
-  posts to Enterprise only.
+  thread) or quote it.
 - Saving: whatever you are writing is saved on the device as you type it,
   images included, until it is sent. One post (or thread) at a time; each
   reply box keeps its own.
@@ -74,8 +73,7 @@ open for no reason is a regression.
 - Cost: the real credit balance from X, with the app's own tally of where it
   went.
 
-Left out on purpose: video, GIFs, real quote posts (Enterprise only, see
-above), reposts, a timeline, search, scheduling, group messages, settings
+Left out on purpose: video, GIFs, reposts, a timeline, search, scheduling, group messages, settings
 for anything the app can work out itself.
 
 ## For agents (MCP)

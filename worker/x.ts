@@ -338,7 +338,6 @@ export function fakeX(env: Env): X {
     },
     async createPost(_t, body) {
       if ((body.text || '').includes('#fail')) throw new XError(403, 'You are not permitted to perform this action.')
-      if (body.quote_tweet_id && !(body.text || '').includes('#quoteok')) throw new XError(403, 'Quote posts are not available on your current plan.')
       return { id: id(), text: body.text || '' }
     },
     async uploadMedia() { return id() },
