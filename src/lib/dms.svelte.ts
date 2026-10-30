@@ -1,10 +1,11 @@
 import { apiJson } from './api'
 import { auth } from './auth.svelte'
 import { notifications } from './notifications.svelte'
+import { toasts } from '$shared/lib/toast.svelte'
 import type { Extra } from './rich'
 
 export interface Person { id: string; username: string | null; name: string | null; avatar: string | null }
-export interface Conversation extends Omit<Person, 'id'> { partner_id: string; text: string; sender_id: string; created_at: string; unread: number; extra?: Extra | null }
+export interface Conversation extends Omit<Person, 'id'> { partner_id: string; text: string; sender_id: string; created_at: string; unread: number; marked?: number | boolean; extra?: Extra | null }
 export interface Message { id: string; sender_id: string; text: string; created_at: string; extra?: Extra | null; pending?: boolean; failed?: string }
 
 // Direct messages. The lists are read from our own database, which X's
@@ -43,6 +44,20 @@ class Dms {
   #setUnread(n: number) {
     this.unread = n
     notifications.setUnread(notifications.unread, n)
+  }
+
+  // Mark a conversation to answer later, or take the mark off (which also
+  // reads it). Optimistic: the row changes at once.
+  async mark(partnerId: string, unread: boolean) {
+    const c = this.items.find((i) => i.partner_id === partnerId)
+    const before = c ? { marked: c.marked, unread: c.unread } : null
+    if (c) { c.marked = unread; if (!unread) c.unread = 0 }
+    try {
+      this.#setUnread((await apiJson<{ unread: number }>(`/api/dms/${partnerId}/mark`, { method: unread ? 'POST' : 'DELETE' })).unread)
+    } catch {
+      if (c && before) Object.assign(c, before)
+      toasts.error(unread ? 'Could not mark it unread' : 'Could not mark it read')
+    }
   }
 
   async markRead(partnerId: string) {

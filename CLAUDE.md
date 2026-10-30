@@ -24,4 +24,10 @@ as dealt with. No reposts. No settings
 for things the app can work out for itself (like whether the account can
 post long posts).
 
+The anti-habit choices are the product, not polish (README → "The point").
+No refresh buttons or pull to refresh: a control that may bring something
+new is a slot machine lever, so gaps in X's delivery are closed by the
+server on its own (the hourly replay). Never add a feed, a counter that
+invites checking, or a push for anything that does not ask for an answer.
+
 See README.md for how it is built and run.

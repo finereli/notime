@@ -5,7 +5,10 @@
   import { apiJson } from '../lib/api'
   import { auth } from '../lib/auth.svelte'
   import { displayName } from '../lib/collapse'
-  import { dms, type Person } from '../lib/dms.svelte'
+  import { dms, type Conversation, type Person } from '../lib/dms.svelte'
+  import { longpress } from '../lib/longpress'
+  import Sheet from '../components/Sheet.svelte'
+  import Icon from '../components/Icon.svelte'
   import { explain, prefs } from '../lib/prefs.svelte'
   import { router } from '../lib/router.svelte'
   import { ago } from '../lib/time'
@@ -17,6 +20,15 @@
   let error = $state('')
 
   dms.load()
+
+  // The long-press menu on a conversation.
+  let menu = $state<Conversation | null>(null)
+  const isUnread = (c: Conversation) => c.unread > 0 || !!c.marked
+  function toggle() {
+    if (!menu) return
+    dms.mark(menu.partner_id, !isUnread(menu))
+    menu = null
+  }
 
   const needsSignIn = $derived(prefs.missingScopes.some((s) => s.startsWith('dm.')))
 
@@ -70,14 +82,14 @@
     {:else}
       <ul>
         {#each dms.items as c (c.partner_id)}
-          <li class:unread={c.unread > 0}>
-            <a href={`#/m/${c.partner_id}`}>
+          <li class:unread={c.unread > 0 || !!c.marked}>
+            <a href={`#/m/${c.partner_id}`} use:longpress={() => (menu = c)}>
               <span class="face" role="link" tabindex="-1" onclick={(e) => { e.preventDefault(); e.stopPropagation(); router.go(`/u/${c.partner_id}`) }} onkeydown={() => {}}><Avatar src={c.avatar} name={displayName(c)} /></span>
               <div class="main">
                 <p class="head"><strong>{displayName(c)}</strong><time>{ago(c.created_at)}</time></p>
                 <p class="text" dir="auto">{c.sender_id === auth.user?.id ? 'You: ' : ''}{plain(c.text, c.extra)}</p>
               </div>
-              {#if c.unread > 0}<span class="count">{c.unread}</span>{/if}
+              {#if c.unread > 0}<span class="count">{c.unread}</span>{:else if c.marked}<span class="count dot" aria-label="Marked unread"></span>{/if}
             </a>
           </li>
         {/each}
@@ -87,6 +99,16 @@
     {#if !starting}
       <button class="load-more" onclick={() => (starting = true)}>New message</button>
     {/if}
+
+    <Sheet open={!!menu} title={menu ? displayName(menu) : ''} onclose={() => (menu = null)}>
+      {#if menu}
+        <button class="item" onclick={toggle}>
+          <Icon name={isUnread(menu) ? 'drafts' : 'mark_email_unread'} size={22} />
+          {isUnread(menu) ? 'Mark as read' : 'Mark as unread'}
+        </button>
+        <a class="item" href={`#/u/${menu.partner_id}`} onclick={() => (menu = null)}><Icon name="person" size={22} />View profile</a>
+      {/if}
+    </Sheet>
   {/if}
 </div>
 
@@ -95,8 +117,11 @@
   ul { list-style: none; }
   li { border-bottom: 1px solid var(--border); position: relative; }
   li.unread::before { content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; width: 3px; background: var(--mark); }
-  a { display: flex; align-items: center; gap: 12px; padding: 14px 18px; color: inherit; text-decoration: none; transition: background 0.15s; }
-  a:hover, a:active { background: var(--bg-hover); }
+  /* No text selection or iOS callout on a long press. */
+  li > a { -webkit-touch-callout: none; user-select: none; }
+  .count.dot { min-width: 12px; width: 12px; height: 12px; padding: 0; }
+  li > a { display: flex; align-items: center; gap: 12px; padding: 14px 18px; color: inherit; text-decoration: none; transition: background 0.15s; }
+  li > a:hover, li > a:active { background: var(--bg-hover); }
   .main { flex: 1; min-width: 0; }
   .head { display: flex; align-items: baseline; gap: 6px; font-size: 0.85rem; color: var(--text-secondary); }
   .head strong { font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

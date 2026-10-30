@@ -331,13 +331,31 @@ export async function saveDm(db: D1Database, m: Dm, ownerId: string): Promise<bo
     .bind(m.id, m.conversation_id, m.partner_id, m.sender_id, m.text, m.created_at, m.sender_id === ownerId ? 1 : 0, m.extra ? JSON.stringify(m.extra) : null)
     .run()
   const fresh = (r.meta.changes ?? 0) > 0
-  // Answering, here or anywhere else, means what came before has been read.
-  if (fresh && m.sender_id === ownerId) await db.prepare(`UPDATE dms SET read = 1 WHERE partner_id = ?1 AND created_at <= ?2`).bind(m.partner_id, m.created_at).run()
+  // Answering, here or anywhere else, means what came before has been read,
+  // and a mark to answer later has done its job.
+  if (fresh && m.sender_id === ownerId) {
+    await db.batch([
+      db.prepare(`UPDATE dms SET read = 1 WHERE partner_id = ?1 AND created_at <= ?2`).bind(m.partner_id, m.created_at),
+      db.prepare(`DELETE FROM dm_marks WHERE partner_id = ?1 AND at <= ?2`).bind(m.partner_id, m.created_at),
+    ])
+  }
   return fresh
 }
 
+// People with something unread, or a conversation marked to answer later.
 export const unreadDms = async (db: D1Database): Promise<number> =>
-  (await db.prepare(`SELECT COUNT(DISTINCT partner_id) AS n FROM dms WHERE read = 0`).first<{ n: number }>())?.n ?? 0
+  (await db
+    .prepare(`SELECT COUNT(*) AS n FROM (SELECT DISTINCT partner_id FROM dms WHERE read = 0 UNION SELECT partner_id FROM dm_marks)`)
+    .first<{ n: number }>())?.n ?? 0
+
+export async function markConversation(db: D1Database, partnerId: string, unread: boolean): Promise<void> {
+  if (unread) await db.prepare(`INSERT OR REPLACE INTO dm_marks (partner_id) VALUES (?1)`).bind(partnerId).run()
+  else
+    await db.batch([
+      db.prepare(`DELETE FROM dm_marks WHERE partner_id = ?1`).bind(partnerId),
+      db.prepare(`UPDATE dms SET read = 1 WHERE partner_id = ?1 AND read = 0`).bind(partnerId),
+    ])
+}
 
 export async function pushDm(env: Env, m: Dm): Promise<void> {
   const u = await env.DB.prepare(`SELECT username, name FROM x_users WHERE id = ?1`).bind(m.partner_id).first<{ username: string; name: string }>()
@@ -350,6 +368,7 @@ export async function listConversations(db: D1Database) {
   const { results } = await db
     .prepare(`SELECT d.partner_id, d.text, d.sender_id, d.created_at, d.extra,
                      (SELECT COUNT(*) FROM dms r WHERE r.partner_id = d.partner_id AND r.read = 0) AS unread,
+                     EXISTS (SELECT 1 FROM dm_marks k WHERE k.partner_id = d.partner_id) AS marked,
                      u.username, u.name, u.avatar
               FROM dms d
               LEFT JOIN x_users u ON u.id = d.partner_id

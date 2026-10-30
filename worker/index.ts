@@ -7,7 +7,7 @@ import { ChatError, NotOnChat, checkInbox, forget, ingestChat, isUnlocked, openC
 import { runtime as chatRuntime } from './chat-engine'
 import { person, postsOf, setFollow } from './people'
 import { crcResponse, verifySignature } from './webhook'
-import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, threadOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, logWebhook, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
+import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, threadOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, logWebhook, markConversation, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { pushRoutes } from './push-routes'
 import { SETUP_VERSION, deliveryLog, repair, replay, scheduledReplay, status } from './setup'
 import { monthToDate } from './usage'
@@ -432,10 +432,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     return json({ id: u.id, username: u.username, name: u.name, avatar: u.profile_image_url ?? null })
   }
 
-  const dm = pathname.match(/^\/api\/dms\/(\d+)(\/read|\/sync)?$/)
+  const dm = pathname.match(/^\/api\/dms\/(\d+)(\/read|\/sync|\/mark)?$/)
   if (dm) {
     const partner = dm[1]
     const who = () => db.prepare(`SELECT id, username, name, avatar FROM x_users WHERE id = ?1`).bind(partner).first()
+    // The long-press menu: mark to answer later, or take the mark off.
+    if (dm[2] === '/mark' && (method === 'POST' || method === 'DELETE')) {
+      await markConversation(db, partner, method === 'POST')
+      return json({ unread: await unreadDms(db) })
+    }
     if (dm[2] === '/read' && method === 'POST') {
       await db.prepare(`UPDATE dms SET read = 1 WHERE partner_id = ?1 AND read = 0`).bind(partner).run()
       return json({ unread: await unreadDms(db) })

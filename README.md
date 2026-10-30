@@ -1,20 +1,42 @@
 # notime
 
 A way to use X without looking at it. You can write posts, see who answered,
-answer them back, and keep up with direct messages. There is no timeline and
-no search, because those are the parts that eat the afternoon. Profiles are
-there only when you tap someone, never as something to browse.
-
-There is no refresh button either, and that is deliberate. A button that
-might bring something new is a slot machine lever: you pull it to see if
-anything came, and pulling becomes the habit the app is meant to break. What
-you see changes only when X delivers something. The price is that when X
-drops a delivery (it does, see below), the item arrives late or not at all
-until something else brings it in. That trade is made on purpose.
+answer them back, and keep up with direct messages, and nothing else pulls
+at you.
 
 It is a single-user app. It signs in with one X account (`OWNER_USERNAME` in
 `wrangler.jsonc`) and refuses every other, since every call is billed to that
 account's API credit.
+
+## The point: built against the habit
+
+X is built to be checked. notime is built so there is nothing to check. Every
+feature below is a decision about what the app refuses to do, and they matter
+more than any feature it has. A change that makes the app more pleasant to
+open for no reason is a regression.
+
+- **No timeline, no search, no browsing.** Those are the parts that eat the
+  afternoon. Profiles exist only when you tap someone who wrote to you, and
+  show a handful of posts.
+- **No refresh button, no pull to refresh.** A control that might bring
+  something new is a slot machine lever: you pull it to see if anything
+  came, and pulling becomes the habit. What you see changes only when X
+  delivers something. Because X sometimes drops deliveries, the server
+  quietly asks X to resend the last two hours every hour; you never do.
+- **Only what asks for an answer.** Replies, mentions, quotes and messages
+  are rows and pushes. Likes and follows are one cumulative line each that
+  grows, never a row per like, never a push, and never a feed of who liked
+  what. Reposts are left out.
+- **Read now, answer later.** Long-press a conversation to mark it unread.
+  The mark stays until you reply or take it off, so having read a message
+  is not a debt you have to pay at once, and the push to answer everything
+  right away loses its grip.
+- **Calm text.** Long posts are cut at 280 characters with a way to read the
+  rest; a reply further down a thread shows what it answers, so it can be
+  understood without opening X.
+- **No knobs.** No settings for anything the app can work out itself, and
+  no notification preferences to tune: the line between what pushes and
+  what waits is the product.
 
 ## What it does
 
@@ -34,7 +56,8 @@ account's API credit.
   push. Reposts are left out. A reply to someone else further down your
   thread shows the posts above it, back to yours. Long posts are cut at 280
   characters with a way to read the rest.
-- Messages: one-to-one direct messages, read and answered as a chat. X now
+- Messages: one-to-one direct messages, read and answered as a chat. Long
+  press a conversation to mark it unread (or read) or to see the person. X now
   keeps them encrypted (X Chat). Entering the X Chat PIN once in Settings
   fetches the owner's chat keys from X's backup (Juicebox); the Worker keeps
   them sealed with the `CHAT_SECRET` secret and decrypts with X's Chat XDK
