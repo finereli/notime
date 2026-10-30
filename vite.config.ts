@@ -33,7 +33,9 @@ export default defineConfig({
           // The page color (--bg-surface) of the theme the owner uses: Android
           // paints it behind the navigation bar, not only on the splash.
           background_color: '#1e1e2e',
-          theme_color: '#1f4a41',
+          // Also the dark surface: the installed app colors Android's system
+          // bars from this, and the green made the back/home buttons loud.
+          theme_color: '#1e1e2e',
           icons: [
             { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
             { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
