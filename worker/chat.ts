@@ -1,7 +1,7 @@
 import type { Env } from './env'
 import type { Dm } from './events'
 import { b64Encode, b64uDecode, utf8 } from './bytes'
-import { getSetting, saveDm, setSetting } from './store'
+import { getSetting, logWebhook, saveDm, setSetting } from './store'
 import { bump } from './usage'
 import { XError } from './x'
 
@@ -239,7 +239,11 @@ async function decrypt(env: Env, chat: any, call: Call, token: string, convId: s
   if (Object.keys(res?.errors ?? {}).length) {
     const again = await run(true)
     if (Object.keys(again?.errors ?? {}).length < Object.keys(res.errors).length) res = again
-    for (const [i, err] of Object.entries(res?.errors ?? {})) if (Number(i) >= keys.length) console.error('chat decrypt failed', convId, err)
+    for (const [i, err] of Object.entries(res?.errors ?? {})) {
+      if (Number(i) < keys.length) continue
+      console.error('chat decrypt failed', convId, err)
+      await logWebhook(env.DB, 'failed', 'decrypt', `${convId}: ${String(err)}`)
+    }
   }
   const byB64 = new Map(raws.map((r) => [r.encoded, r]))
   const out: Decrypted[] = []
@@ -327,7 +331,12 @@ export async function checkInbox(env: Env, chat: any, call: Call, token: string,
       const key = 'chat_seen:' + conv
       if (!id || (await getSetting(db, key)) === id) continue
       if (!(await db.prepare(`SELECT 1 AS ok FROM dms WHERE id = ?1`).bind(id).first())) {
-        if ((await syncConversation(env, chat, call, token, ownerId, conv, 10)).length) changed.push(partner)
+        const found = await syncConversation(env, chat, call, token, ownerId, conv, 10)
+        if (found.length) {
+          changed.push(partner)
+          // The webhook never brought these: the trail for working out why.
+          await logWebhook(db, 'missed', 'chat', `${conv}: ${found.map((m) => `${m.id} from ${m.sender_id} at ${m.created_at}`).join('; ')}`)
+        }
       }
       await setSetting(db, key, id)
     } catch (e) {
@@ -353,7 +362,10 @@ export async function ingestChat(env: Env, rt: ChatRuntime, call: Call, getToken
   const convId = convKey(String(p.conversation_id))
   if (typeof p.conversation_key_change_event === 'string') await saveKeyEvents(db, convId, [p.conversation_key_change_event])
   const chat = await openChat(env, rt, ownerId)
-  if (!chat) return null
+  if (!chat) {
+    await logWebhook(db, 'failed', String(event?.event_type), `${convId}: chat keys are locked`)
+    return null
+  }
   try {
     const items = await decrypt(env, chat, call, await getToken(), convId, ownerId, [{ encoded: p.encoded_event }])
     const fresh = await store(env, convId, ownerId, items)

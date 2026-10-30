@@ -7,7 +7,7 @@ import { ChatError, NotOnChat, checkInbox, forget, ingestChat, isUnlocked, openC
 import { runtime as chatRuntime } from './chat-engine'
 import { person, postsOf, setFollow } from './people'
 import { crcResponse, verifySignature } from './webhook'
-import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, threadOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
+import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, threadOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, logWebhook, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { pushRoutes } from './push-routes'
 import { SETUP_VERSION, repair, status } from './setup'
 import { monthToDate } from './usage'
@@ -67,14 +67,20 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
     if (method === 'GET') {
       const crc = url.searchParams.get('crc_token')
       if (!crc) return fail('crc_token missing')
+      ctx.waitUntil(logWebhook(db, 'crc'))
       return json(await crcResponse(env.X_CLIENT_SECRET, crc))
     }
     if (method !== 'POST') return fail('method not allowed', 405)
     const raw = new Uint8Array(await request.arrayBuffer())
-    if (!(await verifySignature(raw, request.headers, env.X_CLIENT_SECRET, env.X_CONSUMER_SECRET))) return fail('bad signature', 403)
+    if (!(await verifySignature(raw, request.headers, env.X_CLIENT_SECRET, env.X_CONSUMER_SECRET))) {
+      const sigs = ['X-Twitter-Webhooks-Signature-OAuth2', 'X-Twitter-Webhooks-Signature'].filter((h) => request.headers.has(h))
+      ctx.waitUntil(logWebhook(db, 'bad_signature', null, `${raw.length} bytes, headers: ${sigs.join(', ') || 'none'}`))
+      return fail('bad signature', 403)
+    }
     let body: any = null
     try { body = JSON.parse(new TextDecoder().decode(raw)) } catch {}
     const events = Array.isArray(body?.data) ? body.data : body?.data ? [body.data] : []
+    ctx.waitUntil(logWebhook(db, 'delivery', events.map((e: any) => e?.event_type ?? '?').join(' ') || null, events.length ? null : new TextDecoder().decode(raw).slice(0, 300)))
     // Answer first. X gives us ten seconds and the push fan-out can be slow.
     ctx.waitUntil(
       (async () => {
@@ -88,6 +94,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
             } else await ingestEvent(env, x, token, ev, acct.x_user_id)
           } catch (e) {
             console.error('event failed', e)
+            await logWebhook(db, 'failed', String(ev?.event_type ?? '?'), String((e as Error)?.stack ?? e))
           }
         }
       })(),

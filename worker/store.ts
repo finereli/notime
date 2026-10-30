@@ -4,6 +4,16 @@ import { cleanPosts, decode, mentionNotification, parseEvent, pushText, type Dm,
 import { fanOut } from './web-push'
 import { bump } from './usage'
 
+// See migrations/0009_webhook_log.sql. Never throws: logging must not cost a delivery.
+export async function logWebhook(db: D1Database, kind: string, types: string | null = null, note: string | null = null): Promise<void> {
+  try {
+    await db.batch([
+      db.prepare(`INSERT INTO webhook_log (kind, types, note) VALUES (?1, ?2, ?3)`).bind(kind, types, note ? note.slice(0, 500) : null),
+      db.prepare(`DELETE FROM webhook_log WHERE id <= (SELECT MAX(id) - 1000 FROM webhook_log)`),
+    ])
+  } catch {}
+}
+
 export async function getSetting(db: D1Database, key: string): Promise<string | null> {
   const row = await db.prepare(`SELECT value FROM settings WHERE key = ?1`).bind(key).first<{ value: string }>()
   return row?.value ?? null
