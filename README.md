@@ -1,8 +1,9 @@
 # notime
 
 A way to use X without looking at it. You can write posts, see who answered,
-answer them back, and keep up with direct messages. There is no timeline, no
-search and no profiles, because those are the parts that eat the afternoon.
+answer them back, and keep up with direct messages. There is no timeline and
+no search, because those are the parts that eat the afternoon. Profiles are
+there only when you tap someone, never as something to browse.
 
 It is a single-user app. It signs in with one X account (`OWNER_USERNAME` in
 `wrangler.jsonc`) and refuses every other, since every call is billed to that
@@ -12,6 +13,10 @@ account's API credit.
 
 - Posts: text, threads, up to four images each with a description, polls, and
   who can reply. Long posts are allowed if the account has Premium.
+- Your posts: the ones you made, here or on X, with their like counts. From
+  one you can add a follow-up (a reply to yourself, which X shows as a
+  thread) or quote it, which posts a link to it, since X sells real quote
+  posts to Enterprise only.
 - Saving: whatever you are writing is saved on the device as you type it,
   images included, until it is sent. One post (or thread) at a time; each
   reply box keeps its own.
@@ -19,7 +24,9 @@ account's API credit.
   heart. A back-and-forth with one person folds into one row that carries
   the whole conversation. Likes and follows are one cumulative line each
   (per post, and for followers) that rises to the top as it grows, with no
-  push. Reposts are left out.
+  push. Reposts are left out. A reply to someone else further down your
+  thread shows the posts above it, back to yours. Long posts are cut at 280
+  characters with a way to read the rest.
 - Messages: one-to-one direct messages, read and answered as a chat. X now
   keeps them encrypted (X Chat). Entering the X Chat PIN once in Settings
   fetches the owner's chat keys from X's backup (Juicebox); the Worker keeps
@@ -31,13 +38,14 @@ account's API credit.
   from a conversation. A profile is a cent to look up and its posts half a
   cent each, so both are kept: the profile for a day, the posts topped up at
   most once an hour.
-- Push: replies, mentions, quotes and messages reach your phone.
+- Push: replies, mentions, quotes and messages reach your phone, and so does
+  a warning when the X credit runs low. Tapping one opens the installed app.
 - Cost: the real credit balance from X, with the app's own tally of where it
   went.
 
-Left out on purpose: video, GIFs, quote posts (X sells those to Enterprise
-only), scheduling, group messages, settings for anything the app can work
-out itself.
+Left out on purpose: video, GIFs, real quote posts (Enterprise only, see
+above), reposts, a timeline, search, scheduling, group messages, settings
+for anything the app can work out itself.
 
 ## For agents (MCP)
 
@@ -61,16 +69,18 @@ files, headers intact).
 
     src/        the app: views, the composer, drafts, the notification list
     shared/     pwa-kit files: shell, update flow, router, toast, theme
-    worker/     the API: X login, posting, the webhook, web push
+    worker/     the API: X login, posting, the webhook, web push, X Chat,
+                people, the MCP server
     migrations/ the D1 schema
     test/       unit tests, plus two browser walkthroughs
 
 Notifications are pushed to us by X rather than polled. The X Activity API
-delivers each reply, mention, quote and direct message to
-`/api/webhook/x`, signed with the app's OAuth 2.0 client secret. The Worker
-checks the signature, stores the event, and sends a web push. The "check"
-button on the notifications screen reads the mentions timeline as a safety
-net for anything the webhook missed.
+delivers each reply, mention, quote, direct message (old and encrypted),
+new follower and the owner's own likes to `/api/webhook/x`, signed with the
+app's OAuth 2.0 client secret. The Worker checks the signature, stores the
+event, and sends a web push where one is due. The refresh button on the
+notifications screen reads the mentions timeline as a safety net for
+anything the webhook missed.
 
 ## Running it locally
 
@@ -95,7 +105,7 @@ callback with X; `localhost` is not.
     node test/mcp.mjs             # an MCP client: OAuth round trip, every tool
     node test/textarea.mjs        # a restored long draft fits its box
 
-Both browser scripts need `npm run dev` running in another terminal.
+The browser scripts need `npm run dev` running in another terminal.
 
 ## Deploying
 
@@ -105,9 +115,12 @@ Both browser scripts need `npm run dev` running in another terminal.
     npm run deploy
 
 Then open the site and sign in. Signing in registers the webhook with X and
-creates the five subscriptions. The X app needs "Read and write and Direct
-message" permissions in the developer console for messages to work. Settings shows whether each one took, with X's
-own error text if it did not, and a button to try again.
+creates the nine subscriptions (see `EVENTS` in worker/setup.ts). The X app
+needs "Read and write and Direct message" permissions in the developer
+console for messages to work. Settings shows whether each subscription
+took, with X's own error text if it did not, and a button to try again.
+When a release asks X for a new permission (following did), sign in again
+once; the app says so at the top of Notifications.
 
 Secrets the Worker expects: `X_CLIENT_ID`, `X_CLIENT_SECRET`,
 `X_BEARER_TOKEN`, `X_CONSUMER_SECRET`, `VAPID_PUBLIC_KEY`,
@@ -122,7 +135,9 @@ entering the X Chat PIN in Settings again.
 
 ## What X charges
 
-Pay per use, as of October 2026: about a cent and a half per post, twenty
-cents for a post with a link in it, a tenth of a cent per mention read back,
-half a cent per event delivered. The app caches every user and post it looks
-up, never polls, and shows a running estimate in Settings.
+Pay per use, as of October 2026: a cent and a half per post, twenty cents
+for a post with a link in it, a tenth of a cent per mention or own post read
+back, half a cent per reply, mention or quote delivered and a cent per
+message. Looking up a person is a cent, someone else's post half a cent, a
+message read a cent, a follow a cent and a half. The app caches every user
+and post it looks up, never polls, and shows a running estimate in Settings.
