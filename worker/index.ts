@@ -9,7 +9,7 @@ import { person, postsOf, setFollow } from './people'
 import { crcResponse, verifySignature } from './webhook'
 import { backfill, badge, checkBalance, lookPost, syncStats, syncLikes, chainOf, threadOf, getNotification, getSetting, hydrate, ingestEvent, listConversations, listMessages, listNotifications, listOwnPosts, logWebhook, pushDm, realSpend, saveDm, savePosts, saveUsers, setSetting, syncDms, syncOwnPosts, unreadCount, unreadDms } from './store'
 import { pushRoutes } from './push-routes'
-import { SETUP_VERSION, repair, status } from './setup'
+import { SETUP_VERSION, deliveryLog, repair, replay, status } from './setup'
 import { monthToDate } from './usage'
 import { mcpRequest } from './mcp'
 import { approve, authorize, bearerOk, discovery, listClients, pendingExists, preflight, register, revoke, token as oauthToken, unauthorized } from './mcp-auth'
@@ -502,6 +502,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
 
   // --- plumbing -------------------------------------------------------------
   if (pathname === '/api/setup/status') return json(await status(env, x, await token(), origin))
+  if (pathname === '/api/setup/replay' && method === 'POST') return json(await replay(env, x, origin))
+  if (pathname === '/api/setup/log') return json({ items: await deliveryLog(db) })
   if (pathname === '/api/setup/repair' && method === 'POST') return json(await repair(env, x, await token(), origin, acct.x_user_id))
   if (pathname === '/api/usage') return json({ ...(await monthToDate(db)), ...(await realSpend(env, x, await token())) })
 

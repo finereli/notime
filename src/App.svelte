@@ -27,7 +27,7 @@
   import { notifications } from './lib/notifications.svelte'
   import { posts } from './lib/posts.svelte'
   import { prefs } from './lib/prefs.svelte'
-  import { router } from './lib/router.svelte'
+  import { SECTIONS, router } from './lib/router.svelte'
   import { toasts } from '$shared/lib/toast.svelte'
 
   auth.init()
@@ -43,6 +43,7 @@
   const postRoute = $derived(router.route.view === 'post' ? router.route : null)
   const chatId = $derived(router.route.view === 'chat' ? router.route.id : '')
   const profileId = $derived(router.route.view === 'profile' ? router.route.id : '')
+  const section = $derived(router.route.view === 'settings' ? router.route.section : null)
   const title = $derived({ write: 'Write', notifications: 'Notifications', detail: 'Reply', posts: 'Posts', post: 'Post', settings: 'Settings', messages: 'Messages', chat: 'Message', profile: 'Profile' }[view])
   const entries = $derived([
     { label: 'Write', hash: '/', current: view === 'write' },
@@ -124,6 +125,8 @@
       <TopBar leading="back" {title} onleading={() => router.back('/messages')} />
     {:else if view === 'profile'}
       <TopBar leading="back" {title} onleading={() => router.back('/notifications')} />
+    {:else if section}
+      <TopBar leading="back" title={SECTIONS[section]} onleading={() => router.back('/settings')} />
     {:else if view === 'posts'}
       <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for posts made elsewhere" ontrailing={refreshPosts}>
         {#snippet trailing()}
@@ -162,7 +165,7 @@
       {:else if profileId}
         {#key profileId}<Profile id={profileId} />{/key}
       {:else if view === 'settings'}
-        <Settings />
+        <Settings {section} />
       {:else}
         <Write onposted={() => (engaged = true)} />
       {/if}

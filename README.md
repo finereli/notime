@@ -5,6 +5,13 @@ answer them back, and keep up with direct messages. There is no timeline and
 no search, because those are the parts that eat the afternoon. Profiles are
 there only when you tap someone, never as something to browse.
 
+There is no refresh button either, and that is deliberate. A button that
+might bring something new is a slot machine lever: you pull it to see if
+anything came, and pulling becomes the habit the app is meant to break. What
+you see changes only when X delivers something. The price is that when X
+drops a delivery (it does, see below), the item arrives late or not at all
+until something else brings it in. That trade is made on purpose.
+
 It is a single-user app. It signs in with one X account (`OWNER_USERNAME` in
 `wrangler.jsonc`) and refuses every other, since every call is billed to that
 account's API credit.
@@ -79,11 +86,18 @@ delivers each reply, mention, quote, direct message (old and encrypted),
 new follower and the owner's own likes to `/api/webhook/x`, signed with the
 app's OAuth 2.0 client secret. The Worker checks the signature, stores the
 event, and sends a web push where one is due. X delivers on a best-effort
-basis and sometimes skips events. There is deliberately no refresh button
-to make up for it (a lever that may bring something new is a slot machine);
-`webhook_log` records every delivery so gaps can be traced, and
-`/api/notifications/check` and `/api/dms/check` are there for a future
-automatic safety net.
+basis. It documents no delivery guarantee, and developers report dropped
+and late deliveries on its forum through 2026. On 30 October 2026 it sent
+nothing for nine hours while four encrypted messages came in. There is no
+refresh button to make up for it (see the top of this file). Instead,
+`webhook_log` records every delivery, rejected call and decrypt failure, so
+a gap can be traced, and Settings → Connection to X can ask X to replay the
+last 24 hours of deliveries. `/api/notifications/check` and `/api/dms/check`
+are kept on the server for a future automatic safety net.
+
+Like counts are not delivered: likes by others are billed per event, so the
+app reads the like counts of the owner's latest ten posts instead (a tenth
+of a cent each) when the notification list opens, at most every 30 minutes.
 
 ## Running it locally
 

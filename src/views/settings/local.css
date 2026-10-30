@@ -1,0 +1,17 @@
+/* notime's own pieces on settings pages, next to the kit's settings.css.
+   Global under .settings, like the kit's. */
+.settings .quiet { font-size: 0.88rem; line-height: 1.45; color: var(--text-secondary); margin-bottom: 12px; }
+.settings .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.settings .btn { min-height: 44px; padding: 0 18px; border-radius: 22px; background: var(--accent); color: #fff; font-size: 0.9rem; font-weight: 500; text-align: start; }
+.dark .settings .btn { color: #10201c; }
+.settings .btn.plain, .dark .settings .btn.plain { background: transparent; color: var(--accent); border: 1px solid var(--border); font-weight: 400; padding-block: 10px; line-height: 1.3; }
+.settings .btn:disabled { opacity: 0.45; }
+.settings .state { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; margin-bottom: 10px; }
+.settings .state .dot { background: #f59e0b; }
+.settings .state .dot.ok { background: var(--ok); }
+.settings .checks { list-style: none; font-size: 0.85rem; margin-bottom: 12px; }
+.settings .checks li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.settings .checks li span:first-child { color: var(--text-primary); }
+.settings .checks li.bad span:last-child { color: var(--danger); }
+.settings .checks li.why { color: var(--danger); font-size: 0.78rem; padding-top: 0; overflow-wrap: anywhere; }
+.settings .bad-text { color: var(--danger); }

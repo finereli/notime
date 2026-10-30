@@ -61,6 +61,9 @@ export interface X {
   listWebhooks(): Promise<Webhook[]>
   createWebhook(url: string): Promise<Webhook>
   validateWebhook(id: string): Promise<void>
+  // Ask X to resend what it delivered, or tried to, between two times (the
+  // last 24 hours at most). Returns the job id.
+  replayWebhook(id: string, from: Date, to: Date): Promise<string>
   listSubscriptions(token: string): Promise<Subscription[]>
   createSubscription(token: string, body: Record<string, unknown>): Promise<void>
   deleteSubscription(token: string, id: string): Promise<void>
@@ -198,6 +201,11 @@ export function realX(env: Env): X {
       const posts: XPost[] = cleanPosts(r?.data, r?.includes?.media).map((p) => ({ ...p, author_id: userId }))
       await bump(db, 'owned_read', posts.length)
       return { posts, oldestId: r?.meta?.oldest_id }
+    },
+    async replayWebhook(id, from, to) {
+      const stamp = (d: Date) => d.toISOString().replace(/[-:T]/g, '').slice(0, 12)
+      const r = await call('POST', '/2/webhooks/replay', env.X_BEARER_TOKEN, { webhook_id: id, from_date: stamp(from), to_date: stamp(to) })
+      return String(r?.data?.job_id ?? '')
     },
     async listWebhooks() {
       return (await call('GET', '/2/webhooks', env.X_BEARER_TOKEN))?.data ?? []
@@ -358,6 +366,7 @@ export function fakeX(env: Env): X {
       ]
       return { posts, oldestId: '7500' }
     },
+    async replayWebhook() { return 'job-dev' },
     async listWebhooks() { return [{ id: 'wh1', url: 'https://notime.finereli.com/api/webhook/x', valid: true }] },
     async createWebhook(url) { return { id: 'wh1', url, valid: true } },
     async validateWebhook() {},

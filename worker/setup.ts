@@ -1,6 +1,6 @@
 import type { Env } from './env'
 import { XError, type Subscription, type X } from './x'
-import { getSetting, setSetting } from './store'
+import { getSetting, logWebhook, setSetting } from './store'
 
 // The plumbing between X and this Worker: one webhook pointed at us, and one
 // Activity subscription per kind of event. Repair is safe to run any number
@@ -115,4 +115,22 @@ export async function repair(env: Env, x: X, token: string, origin: string, owne
   }
   await setSetting(env.DB, 'setup_errors', JSON.stringify(errors))
   return status(env, x, token, origin)
+}
+
+// X drops deliveries now and then. Replay asks it to resend everything it
+// delivered or tried to in the last 24 hours (its limit); what arrives twice
+// is ignored by event id, so the only cost is what X charges for the resend.
+export async function replay(env: Env, x: X, origin: string): Promise<{ job: string; from: string; to: string }> {
+  const hook = (await x.listWebhooks()).find((w) => w.url === webhookUrl(origin))
+  if (!hook) throw new XError(404, 'There is no delivery address to replay to. Repair the connection first.')
+  const to = new Date(Date.now() - 60_000)
+  const from = new Date(to.getTime() - 24 * 3600_000 + 5 * 60_000)
+  const job = await x.replayWebhook(hook.id, from, to)
+  await logWebhook(env.DB, 'replay', null, `job ${job}, ${from.toISOString()} to ${to.toISOString()}`)
+  return { job, from: from.toISOString(), to: to.toISOString() }
+}
+
+export async function deliveryLog(db: D1Database, limit = 30) {
+  const { results } = await db.prepare(`SELECT at, kind, types, note FROM webhook_log ORDER BY id DESC LIMIT ?1`).bind(limit).all()
+  return results
 }
