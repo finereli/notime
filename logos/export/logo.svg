@@ -1,7 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect id="tile" width="512" height="512" rx="112" fill="#1f4a41"/>
-  <g id="icon">
+  <g id="icon" transform="translate(10 -25)">
     <path d="M124 400V168h64v34c20-26 48-40 82-40 62 0 98 38 98 104v134h-66V278c0-36-16-56-48-56-38 0-64 26-64 70v108z" fill="#f4f6f3"/>
-    <circle cx="404" cy="368" r="36" fill="#e0a63c"/>
   </g>
 </svg>
