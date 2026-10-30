@@ -328,9 +328,13 @@ export async function checkInbox(env: Env, chat: any, call: Call, token: string,
       const latest = await call('GET', `/2/chat/conversations/${conv}/events?max_results=1`, token)
       await bump(db, 'dm_read', latest?.data?.length ?? 0)
       const id = latest?.data?.[0]?.id ? String(latest.data[0].id) : null
+      const at = latest?.data?.[0]?.created_at ? new Date(latest.data[0].created_at).toISOString().slice(0, 19) : null
       const key = 'chat_seen:' + conv
-      if (!id || (await getSetting(db, key)) === id) continue
-      if (!(await db.prepare(`SELECT 1 AS ok FROM dms WHERE id = ?1`).bind(id).first())) {
+      if (!id || !at || (await getSetting(db, key)) === id) continue
+      // Stored messages carry the signed message id, not X's event id, so
+      // compare times (to the second): anything newer than the newest we hold.
+      const have = await db.prepare(`SELECT MAX(created_at) AS at FROM dms WHERE partner_id = ?1`).bind(partner).first<{ at: string | null }>()
+      if (!have?.at || have.at.slice(0, 19) < at) {
         const found = await syncConversation(env, chat, call, token, ownerId, conv, 10)
         if (found.length) {
           changed.push(partner)
