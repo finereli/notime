@@ -26,7 +26,8 @@ open for no reason is a regression.
 - **Only what asks for an answer.** Replies, mentions, quotes and messages
   are rows and pushes. Likes and follows are one cumulative line each that
   grows, never a row per like, never a push, and never a feed of who liked
-  what. Reposts are left out.
+  what. The counts are refreshed on a schedule, every three hours, so
+  opening the app never fetches news. Reposts are left out.
 - **Read now, answer later.** Long-press a conversation to mark it unread.
   The mark stays until you reply or take it off, so having read a message
   is not a debt you have to pay at once, and the push to answer everything
@@ -125,7 +126,8 @@ are kept on the server for a future automatic safety net.
 
 Like counts are not delivered: likes by others are billed per event, so the
 app reads the like counts of the owner's latest ten posts instead (a tenth
-of a cent each) when the notification list opens, at most every 30 minutes.
+of a cent each), on the same cron, every third hour. Not when the list
+opens: that made opening the app a way to check for likes.
 
 ## Running it locally
 

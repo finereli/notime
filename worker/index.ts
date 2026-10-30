@@ -37,6 +37,17 @@ const page = (title: string, body: string, status = 200) =>
     { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
   )
 
+async function scheduledStats(env: Env): Promise<void> {
+  const acct = await account(env.DB)
+  if (!acct || acct.needs_login) return
+  try {
+    const t = await freshToken(d1TokenStore(env.DB), (rt) => refreshGrant(env, rt))
+    await syncStats(env, realX(env), t, acct.x_user_id, true)
+  } catch (e) {
+    await logWebhook(env.DB, 'failed', 'likes', String((e as Error)?.message ?? e))
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
@@ -53,8 +64,11 @@ export default {
   },
 
   // The hourly safety net under X's webhook (see scheduledReplay).
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+  // Like counts too, every third hour: reading them when the list opens
+  // made opening the app a way to check for likes.
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(scheduledReplay(env, realX(env)))
+    if (new Date(event.scheduledTime).getUTCHours() % 3 === 2) ctx.waitUntil(scheduledStats(env))
   },
 } satisfies ExportedHandler<Env>
 
@@ -257,8 +271,6 @@ async function route(request: Request, env: Env, ctx: ExecutionContext, url: URL
   // --- notifications --------------------------------------------------------
   if (pathname === '/api/notifications' && method === 'GET') {
     const limit = Math.min(Number(url.searchParams.get('limit')) || 40, 100)
-    // The first page is when the like counts are worth a fresh look.
-    if (!url.searchParams.get('before')) await syncStats(env, x, await token(), acct.x_user_id).catch((e) => console.error('stats failed', e))
     const { items, more } = await listNotifications(db, url.searchParams.get('before'), limit)
     return json({ items, unread: await unreadCount(db), more })
   }
