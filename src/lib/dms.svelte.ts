@@ -18,7 +18,6 @@ class Dms {
   // X Chat, the encrypted messages: 'locked' until the PIN is entered in Settings.
   chat = $state<'locked' | 'unlocked' | 'off'>('off')
   failed = $state(false)
-  checking = $state(false)
   // Bumped on every load, so an open conversation knows to reread itself.
   tick = $state(0)
 
@@ -38,18 +37,6 @@ class Dms {
       this.tick++
     } catch {
       this.failed = !this.loaded
-    }
-  }
-
-  // Ask X for anything the webhook missed, then reread.
-  async check(): Promise<number> {
-    this.checking = true
-    try {
-      const r = await apiJson<{ added: number }>('/api/dms/check', { method: 'POST' })
-      await this.load()
-      return r.added
-    } finally {
-      this.checking = false
     }
   }
 

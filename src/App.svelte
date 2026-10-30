@@ -108,21 +108,6 @@
     setDarkMode(dark)
   }
 
-  async function checkDms() {
-    try {
-      await dms.check()
-    } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not check X')
-    }
-  }
-
-  async function check() {
-    try {
-      await notifications.check()
-    } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not check X')
-    }
-  }
 </script>
 
 <Toast />
@@ -151,18 +136,9 @@
           <span class="bell"><Icon name="notifications" />{#if notifications.unread || dms.unread}<i></i>{/if}</span>
         {/snippet}
       </TopBar>
-    {:else if view === 'messages'}
-      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for missed messages" ontrailing={checkDms}>
-        {#snippet trailing()}
-          <span class:turning={dms.checking}><Icon name="refresh" /></span>
-        {/snippet}
-      </TopBar>
-    {:else if view === 'notifications'}
-      <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} trailingLabel="Check X for missed mentions" ontrailing={check}>
-        {#snippet trailing()}
-          <span class:turning={notifications.checking}><Icon name="refresh" /></span>
-        {/snippet}
-      </TopBar>
+    <!-- No refresh on Notifications or Messages: a button that might bring
+         something new is a slot machine lever. What you see changes only
+         when X delivers something. -->
     {:else}
       <TopBar leading="menu" {title} onleading={() => (menuOpen = true)} />
     {/if}

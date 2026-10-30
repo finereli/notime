@@ -11,7 +11,6 @@ class Notifications {
   more = $state(false)
   loaded = $state(false)
   failed = $state(false)
-  checking = $state(false)
 
   constructor() {
     auth.onChange(() => { this.items = []; this.unread = 0; this.loaded = false })
@@ -37,18 +36,6 @@ class Notifications {
     const page = await apiJson<Page>(`/api/notifications?before=${encodeURIComponent(last.created_at)}`)
     this.items = [...this.items, ...page.items]
     this.more = page.more
-  }
-
-  // Asks X for mentions the webhook may have missed. This one does cost.
-  async check(): Promise<number> {
-    this.checking = true
-    try {
-      const { added } = await apiJson<{ added: number }>('/api/notifications/check', { method: 'POST' })
-      await this.load()
-      return added
-    } finally {
-      this.checking = false
-    }
   }
 
   async markRead() {

@@ -78,9 +78,12 @@ Notifications are pushed to us by X rather than polled. The X Activity API
 delivers each reply, mention, quote, direct message (old and encrypted),
 new follower and the owner's own likes to `/api/webhook/x`, signed with the
 app's OAuth 2.0 client secret. The Worker checks the signature, stores the
-event, and sends a web push where one is due. The refresh button on the
-notifications screen reads the mentions timeline as a safety net for
-anything the webhook missed.
+event, and sends a web push where one is due. X delivers on a best-effort
+basis and sometimes skips events. There is deliberately no refresh button
+to make up for it (a lever that may bring something new is a slot machine);
+`webhook_log` records every delivery so gaps can be traced, and
+`/api/notifications/check` and `/api/dms/check` are there for a future
+automatic safety net.
 
 ## Running it locally
 
